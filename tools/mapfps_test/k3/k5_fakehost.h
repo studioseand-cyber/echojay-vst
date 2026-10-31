@@ -48,13 +48,17 @@ struct FakeMatchHost : MatchHost
     {
         return captureForSlotIn (snaps, s);
     }
-    const CaptureSnapshot* verifyCapture() const override { return nullptr; }
+    // 8c: the verify capture, when a pin sets one.
+    std::optional<CaptureSnapshot> verify;
+    const CaptureSnapshot* verifyCapture() const override { return verify ? &*verify : nullptr; }
     const ReferenceResult* selectedReference() const override { return ref ? &*ref : nullptr; }
     std::vector<MatchLink> liveLinks() const override { return links; }
     bool pickMixSlot (const juce::String&, juce::String&) override { return false; }
     bool pickReferenceSlot (const juce::String&, juce::String&) override { return false; }
     void openReferenceBrowser (bool) override {}
-    void setAudible (MatchRefSide) override {}
+    // 8b: what the audition switch asked for, in order.
+    std::vector<MatchRefSide> audibleCalls;
+    void setAudible (MatchRefSide s) override { audibleCalls.push_back (s); }
     void seekCompareStream (int, float) override {}
     void postToSessionChat (const juce::String& kind, const juce::var& payload) override { posts.push_back ({ kind, payload }); }
     void draftPlan (const juce::var& block, std::function<void (bool, juce::String, juce::String)> cb) override
@@ -81,8 +85,26 @@ struct FakeMatchHost : MatchHost
     bool compareSlotAudible (int) const override { return false; }
     bool compareSlotPlaying (int) const override { return false; }
     MatchSlotPair matchSlots() const override { return { &mixSlot, &refSlot }; }
-    MatchSides buildMatchSides() const override { return {}; }
+    // The whole-file sides the page windows (8a: matchPressOn reads them).
+    MatchSides sides;
+    MatchSides buildMatchSides() const override { return sides; }
     void openMixPicker() override {}
+
+    // ---- THE LIVE BUFFER (A, 31 Oct 2026, on merging round 8) ------------------------------
+    //
+    // MatchHost gained two pure virtuals on A's side for item 2b, liveBufferState() and
+    // clearLiveBuffer(), so this fake stopped being constructible and every k3 pin from k5a
+    // onward failed to COMPILE in the merged tree. A's pure virtuals, so A's repair, and it goes
+    // here rather than into defaults on the base class: a host that cannot answer "what has
+    // played" should have to say so, which is what a pure virtual is for.
+    //
+    // The answer below is a buffer that has heard nothing, which is the honest state for a fake
+    // with no audio and keeps every existing pin's expectation unchanged. `live` is public so a
+    // pin that wants to drive 2b's wording can set it without touching this class.
+    echojay::LiveBufferState live;
+    echojay::LiveBufferState liveBufferState() const override { return live; }
+    int  liveClears = 0;              ///< so a pin can assert the page cleared it
+    void clearLiveBuffer() override { ++liveClears; live = {}; }
 };
 
 /** A Snapshot slot at index i. */

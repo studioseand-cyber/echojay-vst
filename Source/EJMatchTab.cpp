@@ -28,6 +28,8 @@
 #include "EJCompareMenuIds.h"   // the menu id bands the mix picker decodes
 #include "EJMatchWindowSides.h" // K1: the window switch, its memory, and the sides over the window
 #include "EJMatchHandOff.h"    // 5a: the page over MatchHost, the mix from its own slot
+#include "EJMatchAudition.h"   // 8b: the audition switch and the level match
+#include "EJMatchAfter.h"      // 8c: the after curve, from the verify capture
 using echojay::kCompareMenuBandSize;
 using echojay::kCompareMenuRefNameLen;
 #include <cmath>
@@ -354,7 +356,8 @@ void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
                      const echojay::MatchSide& mix, const echojay::MatchSide& ref,
                      const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
                      bool anyBins, const std::array<float, 6>& moves, float morph, float phase,
-                     const juce::String& mixName, const juce::String& refName);
+                     const juce::String& mixName, const juce::String& refName,
+                     const echojay::MatchAfter* after = nullptr);
 
 /** THE GUIDES, BEHIND EVERYTHING. Defined beside matchTraceRange because the
     one line the stereo axis gets is placed through that range, and a guide
@@ -399,11 +402,18 @@ static std::pair<float, float> matchTraceRange (echojay::MatchAxis a);
 
 // ---- K1: THE PAGE OVER ITS WINDOW (29 Oct 2026; 5a the same day) -------------------------------
 //
-// echojay::matchPageViewOf (EJMatchHandOff.h) turns the host's sides into the page's, so paint and
-// the press cannot disagree about which window they are on. The mix's series is the mix SLOT's own
-// capture (MatchHost::captureForSlot), never latestCapture()'s.
+// echojay::matchPageFor (EJMatchPage.h, fix 8a) turns the host's sides into the page's, so paint,
+// the press and the report cannot disagree about which window they are on, or about the line. The
+// mix's series is the mix SLOT's own capture (MatchHost::captureForSlot), never latestCapture()'s.
 using echojay::MatchPageView;
-using echojay::matchPageViewOf;
+using echojay::matchPageFor;
+using echojay::matchSelectedWindow;
+
+// 8b: THE LEVEL MATCH'S PORT. MatchHost has no setReferenceGainDb on this base
+// (REQUESTS_FOR_A_8, R8-1), so there is no port and the page offers no toggle:
+// it shows the gap line only. When A's call lands, this returns an adapter over
+// it, and nothing else on the page changes.
+static echojay::MatchReferenceGainPort* matchLevelPortOf (echojay::MatchHost&) { return nullptr; }
 
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {
@@ -458,12 +468,13 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
     // as though they were measurements.
     const auto sidesWhole = tickSidesValid ? tickSides : host->buildMatchSides();
     // K1: everything below reads the sides OVER THE REFERENCE'S WINDOW.
-    const auto view  = matchPageViewOf (*host, sidesWhole, slots);
+    const auto view  = matchPageFor (*host, matchSelectedWindow (*host), slots, &sidesWhole);
     const echojay::MatchSides sides { view.w.mix, view.w.ref };
     const auto evMix = host->slotSpectralEvidence (*slots.mix);
     const auto evRef = host->slotSpectralEvidence (*slots.ref);
-    const auto prop  = echojay::computeMatchProposal (sides.mix, sides.ref);
-    const auto ready = echojay::matchReadiness (prop, view.ctx);
+    // 8a: the proposal and the line are the view's, the same the press reads.
+    const auto& prop  = view.prop;
+    const auto& ready = view.ready;
     const auto moves = echojay::matchBandMoves (prop);
 
     std::array<float, 6> deltas {};
@@ -1090,6 +1101,9 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             glowTrace (mixTrace, C::blue);
         }
 
+        // 8c: the after side, for the same view the picture is drawn from.
+        const auto after = echojay::matchAfterOf (host->verifyCapture(), view,
+                                                  echojay::matchPlanForOf (getProperties()));
         matchPaintAxis (g, plot, R.readout, axis, sides.mix, sides.ref,
                         mixSmooth, refSmooth,
                         // EITHER side, not both: the message this feeds is
@@ -1099,7 +1113,17 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
                         echojay::matchBandMoves (prop),
                         juce::jlimit (0.0f, 1.0f, morphPos), linkPhase,
                         host->slotDisplayName (*slots.mix),
-                        host->slotDisplayName (*slots.ref));
+                        host->slotDisplayName (*slots.ref), &after);
+
+        // 8c: a verify capture that cannot be compared says why, over the
+        // picture's bottom edge; no verify capture at all says nothing.
+        if (! after.present && after.why.isNotEmpty())
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (10.0f)));
+            g.drawFittedText (after.why, plot.withTrimmedTop (juce::jmax (0, plot.getHeight() - 16)).reduced (6, 0),
+                              juce::Justification::centredLeft, 1);
+        }
 
         // ---- THE REFUSAL, OVER THE PICTURE -------------------------------
         //
@@ -1251,6 +1275,48 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         }
     }
 
+    // ---- 8b: THE AUDITION ROW, under the hand-off row ------------------------
+    // The switch says what you are hearing and flips it; the line says the
+    // level gap for this window before any flip; the toggle appears only when
+    // the reference is louder and the host can cut it. Nothing here calls the
+    // host: mouseUp and the timer do.
+    {
+        const auto ar = echojay::matchAuditionRects (R.graph);
+        if (! ar.flip.isEmpty() && slots.ref != nullptr
+            && slots.ref->kind != CompareSlotState::Kind::Empty)
+        {
+            const bool refIsTop   = host->matchRefIsTop();
+            const bool refAudible = host->compareSlotAudible (refIsTop ? 0 : 1);
+            const auto fr = ar.flip.toFloat();
+            g.setColour (C::bg3.withAlpha (hotZone == 23 ? 1.0f : 0.7f));
+            g.fillRoundedRectangle (fr.reduced (1.0f), 4.0f);
+            g.setColour ((refAudible ? C::text2 : C::blue).withAlpha (0.6f));
+            g.drawRoundedRectangle (fr.reduced (1.5f), 4.0f, 1.0f);
+            g.setFont (juce::Font (juce::FontOptions (10.5f)));
+            g.setColour (C::text);
+            g.drawText (echojay::matchAuditionLabel (refAudible), ar.flip, juce::Justification::centred, true);
+
+            auto* port = matchLevelPortOf (*host);
+            const auto level = echojay::matchLevelLineOf (view, slots, port, getProperties());
+            if (level.offerToggle)
+            {
+                const auto tr = ar.toggle.toFloat();
+                g.setColour (C::blue.withAlpha (level.on ? 0.24f : (hotZone == 24 ? 0.12f : 0.0f)));
+                g.fillRoundedRectangle (tr.reduced (1.0f), 4.0f);
+                g.setColour (C::blue.withAlpha (level.on ? 0.7f : 0.4f));
+                g.drawRoundedRectangle (tr.reduced (1.5f), 4.0f, 1.0f);
+                g.setColour (level.on ? C::text : C::text2);
+                g.drawText (echojay::kMatchLevelToggleLabel, ar.toggle, juce::Justification::centred, true);
+            }
+            const auto text = level.on && level.matched.isNotEmpty() ? level.matched : level.gap;
+            if (text.isNotEmpty())
+            {
+                g.setColour (C::text3);
+                g.drawFittedText (text, ar.line, juce::Justification::centredRight, 1);
+            }
+        }
+    }
+
     if (fade < 0.999f) g.endTransparencyLayer();
 }
 
@@ -1265,13 +1331,14 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 //
 // ONCE PER COMPARISON (6b): a press whose comparison this page last posted
 // plays the morph and points at that report; it does not post another.
+//
+// EXACTLY WHAT IS ON SCREEN (8a): echojay::matchPressOn reads one page view for
+// the selected window and decides, posts and notes from it; this function only
+// animates or says the refusal. A window that was not taken refuses with the
+// page's own line, never the whole capture.
 void EchoJayEditor::MatchPanel::press()
 {
     if (host == nullptr) return;
-    // ONE read of the sides, not two: they are read from live slots, and two
-    // reads could disagree about what the press was for.
-    const auto view  = matchPageViewOf (*host, host->buildMatchSides(), host->matchSlots());
-    const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (view.w.mix, view.w.ref), view.ctx);
 
     // TWO OF THE FOUR AXES CANNOT BE MATCHED, AND THE PRESS SAYS SO. The
     // proposal emits Gain, Ceiling and Band moves and nothing else, so dynamics
@@ -1297,14 +1364,13 @@ void EchoJayEditor::MatchPanel::press()
     // move, which is what this test has always meant; `possible` now answers
     // the narrower question of whether the LINE is the optimistic one, and
     // gating the press on that would refuse a move the proposal is holding.
-    const auto id   = echojay::matchReportIdentityOf (view);
-    const auto acts = echojay::matchPressActs (ready.playable, id, getProperties());
-    if (! acts.morph)
+    const auto p = echojay::matchPressOn (*host, getProperties());
+    if (! p.acts.morph)
     {
         // A REFUSED PROPOSAL CANNOT ANIMATE, so the press SAYS so rather than
         // playing nothing and leaving the user to guess whether it worked.
-        refusedText  = echojay::matchPressRefusedText (ready);
-        refusedBadge = echojay::matchRefusedBadge (false, ready.goodNews);
+        refusedText  = echojay::matchPressRefusedText (p.ready);
+        refusedBadge = echojay::matchRefusedBadge (false, p.ready.goodNews);
         refusedFor   = 2.5f;
         refusedWasAxis = false;
         morphing = false; morphDone = false; morphPos = 0.0f;
@@ -1318,14 +1384,8 @@ void EchoJayEditor::MatchPanel::press()
     morphDone = false;
     clearRefusal();   // C's N1, fourth site: a press that PLAYS leaves no sentence behind
     // 5d: the report, from the same view the press just read; 6b: once per comparison.
-    if (acts.post)
-    {
-        if (echojay::matchPressReport (*host, echojay::matchHandOffOf (*host, view), id, getProperties())
-                == echojay::MatchReportPost::Posted)
-            getProperties().set (echojay::matchPagePlanLineId(), juce::String());
-    }
-    else
-        getProperties().set (echojay::matchPageReportInChatId(), true);   // already in the chat
+    if (p.report == echojay::MatchReportPost::Posted)
+        getProperties().set (echojay::matchPagePlanLineId(), juce::String());
     startTimerHz (60);
     repaint();
 }
@@ -1773,7 +1833,8 @@ void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
                      const echojay::MatchSide& mix, const echojay::MatchSide& ref,
                      const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
                      bool anyBins, const std::array<float, 6>& moves, float morph, float phase,
-                     const juce::String& mixName, const juce::String& refName)
+                     const juce::String& mixName, const juce::String& refName,
+                     const echojay::MatchAfter* after)
 {
     if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
     switch (a)
@@ -1808,6 +1869,30 @@ void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
                                                mixBins, refBins, true);
             matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second,
                                   echojay::matchAxisZoneDb (echojay::MatchAxis::Spectrum), phase);
+
+            // 8c: THE AFTER CURVE (K6). SIX BAND STEPS, NOT A LINE THROUGH SIX
+            // NUMBERS: section 3 forbids inventing shape between band centres,
+            // and the verify capture's figures are six bands. Each step is the
+            // verify capture's band relative over the plan's window, on the
+            // spectrum's own range; a band that got further from the reference
+            // is drawn in the warning colour.
+            if (after != nullptr && after->present)
+            {
+                for (int b = 0; b < 6; ++b)
+                {
+                    const float x0 = echojay::matchFreqToX (plot, echojay::kMacroBandLoHz[(size_t) b]);
+                    const float x1 = b < 5 ? echojay::matchFreqToX (plot, echojay::kMacroBandLoHz[(size_t) b + 1])
+                                           : (float) plot.getRight();
+                    const float y  = echojay::matchDbToY (plot, after->afterRel[(size_t) b], range.first, range.second);
+                    const bool warn = echojay::matchAfterWarns (after->trend[(size_t) b]);
+                    g.setColour ((warn ? MatchC::amber : MatchC::text).withAlpha (0.85f));
+                    g.drawLine (x0, y, x1, y, warn ? 2.0f : 1.5f);
+                }
+                g.setColour (MatchC::text2);
+                g.setFont (juce::Font (juce::FontOptions (9.5f)));
+                g.drawText ("after", plot.withTrimmedTop (2).removeFromTop (12).removeFromRight (40).reduced (2, 0),
+                            juce::Justification::centredRight, true);
+            }
 
             // THE SPECTRUM'S OWN NUMBERS: the six band relatives are the thing
             // the proposal moves, so the row carries the two that a reader
@@ -2531,6 +2616,10 @@ static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
     // 22: "Make a plan" (5d). The rect is there whether or not the button is
     // drawn; mouseUp acts only when it is offered.
     if (echojay::matchHandOffRects (R.graph).planButton.contains (p)) return 22;
+    // 23 and 24: the audition switch and the level toggle (8b). mouseUp acts on
+    // the toggle only when it is offered.
+    if (echojay::matchAuditionRects (R.graph).flip.contains (p))   return 23;
+    if (echojay::matchAuditionRects (R.graph).toggle.contains (p)) return 24;
     if (R.button .contains (p)) return 1;
     if (R.mixPick.contains (p)) return 2;
     if (R.refPick.contains (p)) return 3;
@@ -2607,6 +2696,10 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                 // A report or a plan answer was about the other window.
                 getProperties().remove (echojay::matchPageReportInChatId());
                 getProperties().remove (echojay::matchPagePlanLineId());
+                // 8b: the level answer was for the other window; ask again now.
+                echojay::matchLevelSync (matchLevelPortOf (*host),
+                                         matchPageFor (*host, next, host->matchSlots()),
+                                         host->matchSlots(), getProperties());
                 repaint();
             }
             break;
@@ -2618,7 +2711,7 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
         case 22:
         {
             auto& props = getProperties();
-            const auto view = matchPageViewOf (*host, host->buildMatchSides(), host->matchSlots());
+            const auto view = matchPageFor (*host, matchSelectedWindow (*host), host->matchSlots());
             if (! echojay::matchMakePlanOfferedOn (*host, view)
                 || (bool) props.getWithDefault (echojay::matchPagePlanBusyId(), false))
                 break;
@@ -2636,11 +2729,43 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                                                 echojay::matchPlanAnswered (*panel->host, ok, planId, why));
                     panel->repaint();
                 }, whyNot);
-            if (! sent)
+            if (sent)
+            {
+                // 8c: what this plan was made for, so a verify capture is
+                // compared only on the same reference and window.
+                const auto* ref = host->selectedReference();
+                echojay::matchNotePlanFor (props, view, ref != nullptr ? ref->name : juce::String());
+            }
+            else
             {
                 props.set (echojay::matchPagePlanBusyId(), false);
                 props.set (echojay::matchPagePlanLineId(), whyNot);
             }
+            repaint();
+            break;
+        }
+        // 8b: THE AUDITION SWITCH flips what you hear (setAudible, never on the
+        // side already audible: A's call would mute it).
+        case 23:
+        {
+            const auto slots = host->matchSlots();
+            if (slots.ref == nullptr || slots.ref->kind == CompareSlotState::Kind::Empty) break;
+            const bool refIsTop = host->matchRefIsTop();
+            const bool live = slots.mix != nullptr && slots.mix->kind == CompareSlotState::Kind::Live;
+            host->setAudible (echojay::matchAuditionFlipTarget (refIsTop, host->compareSlotAudible (refIsTop ? 0 : 1), live));
+            repaint();
+            break;
+        }
+        // 8b: THE LEVEL TOGGLE, only where it is offered; the host is asked at once.
+        case 24:
+        {
+            auto* port = matchLevelPortOf (*host);
+            const auto slots = host->matchSlots();
+            const auto view  = matchPageFor (*host, matchSelectedWindow (*host), slots);
+            if (! echojay::matchLevelMatchOffered (view.levelGapDb, port)) break;
+            auto& props = getProperties();
+            props.set (echojay::matchLevelOnId(), ! (bool) props.getWithDefault (echojay::matchLevelOnId(), false));
+            echojay::matchLevelSync (port, view, slots, props);
             repaint();
             break;
         }
@@ -2710,6 +2835,13 @@ void EchoJayEditor::MatchPanel::timerCallback()
         // THE ONE BUILD OF THE TICK. paint reads what this stores.
         tickSides      = host->buildMatchSides();
         tickSidesValid = true;
+        // 8b: a changed slot or reference asks the host for the level again.
+        if (auto* port = matchLevelPortOf (*host))
+        {
+            const auto slots = host->matchSlots();
+            echojay::matchLevelSync (port, matchPageFor (*host, matchSelectedWindow (*host), slots, &tickSides),
+                                     slots, getProperties());
+        }
         // The trail advances once per TICK, never once per repaint: a hover
         // must not run the history faster than time.
         ++tickSeq;
@@ -2745,8 +2877,10 @@ void EchoJayEditor::MatchPanel::timerCallback()
     //  F1  it re-read the WHOLE sides while the press reads the sides over the reference's WINDOW
     //      (matchPageViewOf, view.ctx) - my comment even said the opposite. Two readings of "is it
     //      still true", so on Loudest 30 s the sentence could time out while the window still
-    //      cannot act, or sit over a window that has become valid. ONE reading now, below, and the
-    //      press's own.
+    //      cannot act, or sit over a window that has become valid. CLOSED on 31 Oct 2026 by
+    //      Kathy's fix 8a (2a161cb5): the re-arm below calls matchPageFor, which IS the press's
+    //      computation, so the two cannot differ at all - not "gets the same answer", the same
+    //      call. Sean's and C's instruction on the merge, and the right shape.
     //  F2  "Nothing to play: these two already match." is not playable either, so it was re-armed
     //      for ever - a scrim over the plot that shows the match it is talking about. Good news is
     //      not a refusal and is never kept.
@@ -2783,20 +2917,19 @@ void EchoJayEditor::MatchPanel::timerCallback()
                 const auto slots = host->matchSlots();
                 if (slots.mix != nullptr && slots.ref != nullptr)
                 {
-                    // THE PRESS'S OWN READING, line for line (press() above): the windowed sides
-                    // and the context that goes with them.
+                    // THE PRESS'S OWN READING, through the PRESS'S OWN FUNCTION (Kathy's fix 8a,
+                    // 2a161cb5, merged 31 Oct 2026).
                     //
-                    // KATHY'S RULING, 30 Oct 2026: the press uses the SELECTED WINDOW, as one
-                    // computation that the line, the morph, the report and the plan all read, and
-                    // a window that cannot be taken is refused with the page's own line rather
-                    // than falling back to the whole capture. She is landing that as a shared
-                    // helper in her K1 code. Until it exists this is a COPY of the press's four
-                    // lines, which gets the same answer and is still two places that can drift -
-                    // so when her helper lands, both call it and this comment goes.
-                    const auto view  = matchPageViewOf (*host, host->buildMatchSides(), slots);
-                    const auto again = echojay::matchReadiness (
-                                           echojay::computeMatchProposal (view.w.mix, view.w.ref), view.ctx);
-                    stillTrue = ! again.playable && ! again.goodNews;   // F2
+                    // This was a copy of the press's four lines, and a copy is two places that can
+                    // drift however carefully it is written - worse here, because mine built the
+                    // WHOLE sides while the press used the selected window, so on "Loudest 30 s"
+                    // the re-arm could have been answering a different question from the sentence
+                    // it was deciding about. Her ruling was that the press uses the selected
+                    // window as one computation that the line, the morph, the report and the plan
+                    // all read, and matchPageFor is that computation. The re-arm now calls it, so
+                    // there is one reading and no copy to keep in step.
+                    const auto view = matchPageFor (*host, matchSelectedWindow (*host), slots);
+                    stillTrue = ! view.ready.playable && ! view.ready.goodNews;   // F2
                 }
             }
         }

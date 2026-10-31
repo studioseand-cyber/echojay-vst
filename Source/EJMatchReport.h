@@ -111,6 +111,19 @@ inline MatchCrestLogSide matchCrestLogSide (const std::vector<Frame>& frames, Ho
     return s;
 }
 
+/** THE PAYLOAD'S "after" BLOCK (C2 section 4; round 8c, EJMatchAfter.h).
+    present false: there is no verify capture, or there is one that cannot be
+    compared with this comparison, and then `why` says which. Never "nothing
+    changed": no figures are written unless present. */
+struct MatchReportAfter
+{
+    bool present = false;
+    juce::String why;
+    std::optional<float> integrated;
+    float durationSeconds = 0.0f;
+    std::array<float, 6> beforeDb {}, afterDb {};   ///< D per band, mix minus reference; before and after the plan
+};
+
 struct MatchReportIn
 {
     juce::String    referenceName;
@@ -126,6 +139,7 @@ struct MatchReportIn
     std::optional<MatchCrestLog> crestLog;
     bool hasMatchPlan = false;   ///< the build declares match_plan (C3 section 4)
     bool agentOn = false;
+    MatchReportAfter after;      ///< 8c; present false unless a verify capture compares
 };
 
 // -----------------------------------------------------------------------------
@@ -606,8 +620,30 @@ inline juce::String matchReportPayload (const MatchReportIn& in, const MatchRepo
         p->setProperty ("crestLog", juce::var (c.get()));
     }
     if (rep.discriminator.isNotEmpty()) p->setProperty ("discriminator", rep.discriminator);
+    // 8c: "the same shape as mix", plus both sets of six band deltas.
     Obj::Ptr after = new Obj();
-    after->setProperty ("present", false);
+    after->setProperty ("present", in.after.present);
+    if (! in.after.present)
+    {
+        if (in.after.why.isNotEmpty()) after->setProperty ("why", in.after.why);
+    }
+    else
+    {
+        after->setProperty ("name", "after");
+        if (! whole) after->setProperty ("windowS", 30.0);
+        else if (in.after.durationSeconds > 0.0f) after->setProperty ("windowS", (double) in.after.durationSeconds);
+        Obj::Ptr f = new Obj();
+        if (in.after.integrated) f->setProperty ("lufs", (double) *in.after.integrated);
+        after->setProperty ("figures", juce::var (f.get()));
+        juce::Array<juce::var> before, afterD;
+        for (std::size_t b = 0; b < 6; ++b)
+        {
+            before.add ((double) in.after.beforeDb[b]);
+            afterD.add ((double) in.after.afterDb[b]);
+        }
+        after->setProperty ("deltasBeforeDb", before);
+        after->setProperty ("deltasAfterDb", afterD);
+    }
     p->setProperty ("after", juce::var (after.get()));
     p->setProperty ("planId", "");
     return juce::JSON::toString (juce::var (p.get()), true);

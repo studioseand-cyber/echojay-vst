@@ -37,6 +37,11 @@
 #include "EJMatchProposal.h"     // the proposal this page draws
 #include "EJSpectralEvidence.h"  // SpectralEvidence, reductionName
 #include "EJReferenceBar.h"      // ejEvenCell, kEjCellGap, kEjCellRadius: ONE cell rule
+#include <optional>
+#include <type_traits>
+#include "EJMatchWindowSides.h"  // the window: matchSidesForWindow, matchWindowMemory, the Live line
+#include "PluginProcessor.h"     // CaptureSnapshot, the mix slot's own capture in the page view
+#include "EJCompareSlotState.h"  // CompareSlotState, the two slots the page view reads
 
 namespace echojay
 {
@@ -1186,19 +1191,14 @@ inline MatchReadiness matchReadiness (const MatchProposal& p)
     return r;
 }
 
-/** The one line's precedence-1 sentence for a Live mix side (DESIGN_MATCH_TAB
-    rev 3, D4). One definition: EJMatchWindowSides.h uses it too. */
-inline juce::String matchLiveNeedsCaptureLine()
-{
-    return "Capture at least 30 s of the chorus to make a plan.";
-}
-
 /** WHAT THE ONE LINE KNOWS BEYOND THE PROPOSAL (K1, 29 Oct 2026): whether the
     mix side is Live, and why the selected window could not be taken. */
 struct MatchReadinessContext
 {
     bool         mixIsLive = false;
     juce::String windowWhy;   ///< "" when the window was taken, or none was asked for
+    /** "Loudest 30 s" was asked for and a side could not be windowed (fix 8a). */
+    bool         windowNotTaken = false;
 };
 
 /** THE LINE WITH ITS NEW TOP ENTRY (contract section 2A, precedence 1).
@@ -1208,10 +1208,17 @@ struct MatchReadinessContext
     It changes WHICH SENTENCE LEADS and nothing else: `playable` is the
     proposal's, set by the one-argument form, so the page still shows and plays
     what the two sides hold (MA9). A window that could not be taken comes next,
-    for the same reason: it removes the bands, so it explains the rest. */
+    for the same reason: it removes the bands, so it explains the rest.
+
+    A WINDOW THAT WAS ASKED FOR AND NOT TAKEN REFUSES THE PRESS (fix 8a, Sean's
+    ruling of 30 Oct: the press uses exactly what is on screen). The sides keep
+    their whole-file gain and peak, so the proposal can still hold a move; it
+    is not played, because playing it would be the whole file under the
+    window's name. The press says the line. */
 inline MatchReadiness matchReadiness (const MatchProposal& p, const MatchReadinessContext& c)
 {
     auto r = matchReadiness (p);
+    if (c.windowNotTaken) r.playable = false;
     if (c.mixIsLive)
     {
         r.possible = false;
@@ -1284,6 +1291,118 @@ inline juce::String matchProvenanceText (const SpectralEvidence& mix, const Spec
     return juce::String ("yours: ") + reductionName (mix.reduction)
          + "   reference: " + reductionName (ref.reduction)
          + "   (different measurements, compare with that in mind)";
+}
+
+// =============================================================================
+//  THE PAGE VIEW: THE ONE COMPUTATION (fix 8a, 30 Oct 2026)
+// =============================================================================
+//
+// Sean's ruling: the AI MATCH press uses exactly what is on screen. So there
+// is one function that turns the host's answers into what the page shows, and
+// every reader calls it:
+//   the page (paint), the press (matchPressOn), the report and "Make a plan"
+//   (matchHandOffOf reads the view it returns), and A's "keep the reason on
+//   screen" check. None of them computes a proposal or a line of its own.
+//
+// WHAT IT RETURNS. The two sides over the selected window, the context the
+// line needs, the reference's key, the mix slot's own capture, the page's
+// proposal, the plan's uncapped proposal, and the readiness: the one line,
+// `playable` (the press has a move to play) and `possible` (the line is the
+// optimistic one). Since round 8b, also the level gap the audition line shows.
+//
+// A WINDOW ASKED FOR AND NOT TAKEN REFUSES. In "Loudest 30 s" a side that
+// cannot be windowed (a reference with no hop series or under 30 s, a Live
+// mix, a slot with no capture of its own) leaves `playable` false, and the
+// line says why. It never falls back to the whole capture.
+//
+// PURE. It reads the host through const calls only (buildMatchSides,
+// captureForSlot, selectedReference) and writes nothing; the window is passed
+// in, never read from the memory here.
+//
+// WHY A TEMPLATE. MatchHost, MatchSlotPair and MatchSides are declared in
+// EJMatchTab.h, which includes this header, so they are incomplete here. The
+// template is only that: Host must be a MatchHost (checked), and A calls it as
+//     echojay::matchPageFor (host, window, host.matchSlots())
+// with `host` a const echojay::MatchHost&.
+
+struct MatchHost;
+struct MatchSlotPair;
+struct MatchSides;
+
+struct MatchPageView
+{
+    MatchWindowedSides w;
+    MatchReadinessContext ctx;
+    juce::String refKey;
+    /** The capture the mix slot is showing, by value; nullopt for any slot that
+        is not a Snapshot. */
+    std::optional<CaptureSnapshot> mixCapture;
+    /** The page's proposal and the plan's uncapped one, over the window's sides. */
+    MatchProposal  prop, plan;
+    /** The one line, playable and possible. */
+    MatchReadiness ready;
+    /** THE LEVEL GAP (round 8b): the reference minus the mix, LUFS, for this
+        window. "Whole song": each side's integrated. "Loudest 30 s": each
+        side's own window, the measure the window is chosen by. Absent when
+        either figure is not measured, or the window was not taken; the
+        audition line then says nothing about level. */
+    std::optional<float> levelGapDb;
+};
+
+/** THE PAGE VIEW for one window.
+
+    host           the MatchHost;
+    window         the selected window (matchSelectedWindow (host) gives the
+                   page's own choice for the selected reference);
+    slots          the two slots on screen, host.matchSlots();
+    sidesThisTick  optional: the whole-file sides the caller already built from
+                   host.buildMatchSides() this tick (the page's paint keeps one
+                   build per timer tick). Omitted, the function builds them. */
+template <typename Host = MatchHost, typename Slots = MatchSlotPair, typename Sides = MatchSides>
+inline MatchPageView matchPageFor (const Host& host, MatchWindowMode window, const Slots& slots,
+                                   const Sides* sidesThisTick = nullptr)
+{
+    static_assert (std::is_base_of_v<MatchHost, Host>, "matchPageFor reads a MatchHost");
+    const Sides sides = sidesThisTick != nullptr ? *sidesThisTick : host.buildMatchSides();
+
+    MatchPageView v;
+    const auto* ref = host.selectedReference();
+    v.refKey = ref != nullptr ? ref->path : juce::String();
+    const bool live = slots.mix != nullptr && slots.mix->kind == CompareSlotState::Kind::Live;
+    if (slots.mix != nullptr) v.mixCapture = host.captureForSlot (*slots.mix);
+    v.w = matchSidesForWindow<MeterEngine::HopFrame> (sides.mix, sides.ref,
+                                                      v.mixCapture ? &v.mixCapture->hopFrames : nullptr,
+                                                      ref != nullptr ? &ref->hopFrames : nullptr,
+                                                      window, live);
+    v.ctx.mixIsLive = live;
+    if (window == MatchWindowMode::Loudest30 && ! live) v.ctx.windowWhy = v.w.why;
+    v.ctx.windowNotTaken = window == MatchWindowMode::Loudest30 && ! v.w.windowed;
+    v.prop  = computeMatchProposal (v.w.mix, v.w.ref);
+    v.plan  = computeMatchProposal (v.w.mix, v.w.ref, MatchProposalFor::Plan);
+    v.ready = matchReadiness (v.prop, v.ctx);
+
+    if (window == MatchWindowMode::Whole)
+    {
+        if (v.w.mix.integrated > -99.0f && v.w.ref.integrated > -99.0f)
+            v.levelGapDb = v.w.ref.integrated - v.w.mix.integrated;
+    }
+    else if (v.w.windowed && v.mixCapture && ref != nullptr && v.w.mixWindow && v.w.refWindow)
+    {
+        const auto m = matchWindowLufs (v.mixCapture->hopFrames, *v.w.mixWindow);
+        const auto r = matchWindowLufs (ref->hopFrames, *v.w.refWindow);
+        if (m && r) v.levelGapDb = (float) (*r - *m);
+    }
+    return v;
+}
+
+/** The window the page shows for the selected reference: the per-reference
+    memory (EJMatchWindowSides.h), "Whole song" by default. */
+template <typename Host = MatchHost>
+inline MatchWindowMode matchSelectedWindow (const Host& host)
+{
+    static_assert (std::is_base_of_v<MatchHost, Host>, "matchSelectedWindow reads a MatchHost");
+    const auto* ref = host.selectedReference();
+    return matchWindowMemory().get (ref != nullptr ? ref->path : juce::String());
 }
 
 } // namespace echojay

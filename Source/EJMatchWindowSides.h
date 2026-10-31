@@ -8,7 +8,6 @@
 #include <vector>
 #include "EJMatchProposal.h"   // MatchSide
 #include "EJMatchWindow.h"     // MatchWindowMode, HopRange, loudest30Window and its refusal
-#include "EJMatchPage.h"       // matchLiveNeedsCaptureLine, the one line's precedence-1 sentence
 
 // =============================================================================
 //  K1: THE MATCH WINDOW ON THE PAGE. Which window each reference is compared
@@ -38,6 +37,15 @@
 
 namespace echojay
 {
+
+/** The one line's precedence-1 sentence for a Live mix side (DESIGN_MATCH_TAB
+    rev 3, D4). One definition, here rather than in EJMatchPage.h since fix 8a:
+    EJMatchPage.h now includes this header for the page view (matchPageFor),
+    so this one cannot include it back. */
+inline juce::String matchLiveNeedsCaptureLine()
+{
+    return "Capture at least 30 s of the chorus to make a plan.";
+}
 
 // -----------------------------------------------------------------------------
 // THE MEMORY: whole song by default, remembered per reference
@@ -141,6 +149,39 @@ inline std::array<float, 6> matchWindowBandsDb (const std::vector<Frame>& frames
         db[b] = p > 1e-12 ? (float) (10.0 * std::log10 (p)) : -120.0f;
     }
     return db;
+}
+
+// -----------------------------------------------------------------------------
+// A WINDOW'S LOUDNESS. Moved here from EJMatchHandOff.h in round 8b, so the
+// page view (matchPageFor, EJMatchPage.h) can give the level gap per window.
+// -----------------------------------------------------------------------------
+
+/** A window's loudness, LUFS: 10*log10 of the mean of 10^(L/10) over the
+    window's usable hops (C4 section 7's usable hop). It is the measure the
+    loudest-30 window is chosen by, so a side's loudest30 figure is the
+    window's own (DESIGN rev 7 section 2: "the 30 s with the highest average
+    short-term loudness"). K's reading of C3's "loudest30". */
+template <typename Frame>
+inline std::optional<double> matchWindowLufs (const std::vector<Frame>& frames, HopRange w)
+{
+    double sum = 0.0;
+    int n = 0;
+    for (std::size_t i = w.begin; i < std::min (w.end, frames.size()); ++i)
+    {
+        if (! loudnessHopUsable (frames[i], i)) continue;
+        sum += std::pow (10.0, (double) frames[i].shortTermLufs / 10.0);
+        ++n;
+    }
+    if (n == 0 || ! (sum > 0.0)) return std::nullopt;
+    return 10.0 * std::log10 (sum / (double) n);
+}
+
+template <typename Frame>
+inline std::optional<double> matchLoudest30Lufs (const std::vector<Frame>& frames)
+{
+    const auto L = loudest30Window (frames);
+    if (! L.window) return std::nullopt;
+    return matchWindowLufs (frames, *L.window);
 }
 
 namespace detail
