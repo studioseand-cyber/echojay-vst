@@ -8,6 +8,7 @@
 #include "EJMatchAttributionCapture.h"   // attribInsFromCapture, attributeBandMove
 #include "EJMatchBlock.h"                // buildMatchBlock, context.match v1
 #include "EJMatchReport.h"               // the match_report payload
+#include "EJMatchAfter.h"                // 8c: the after side, from the verify capture
 
 // =============================================================================
 //  THE MATCH PAGE OVER MATCHHOST: which capture and which window it reads.
@@ -102,6 +103,9 @@ struct MatchHandOff
     bool mixIsCapture = false;                  ///< the mix slot holds a capture of its own
     std::optional<double> mixLoudest30, refLoudest30;
     std::optional<MatchCrestLog> crestLog;
+    /** 8c: the payload's "after" block. The press fills it (matchPressOn), from
+        the verify capture and what the page's plan was made for. */
+    MatchReportAfter after;
 };
 
 /** Whether the plan proposal considered the bands at all. */
@@ -193,6 +197,7 @@ inline MatchReportIn matchReportInOf (const MatchHandOff& h, bool hasMatchPlan, 
     in.crestLog = h.crestLog;
     in.hasMatchPlan = hasMatchPlan;
     in.agentOn = agentOn;
+    in.after = h.after;
     return in;
 }
 
@@ -238,6 +243,9 @@ struct MatchReportIdentity
     juce::String captureId, referencePath;
     MatchWindowMode mode = MatchWindowMode::Whole;
     int hops = 0;
+    /** 8c: the verify capture's id when the report carries an after block, so
+        a press after the verify capture posts a new report with it. */
+    juce::String afterId;
 };
 
 /** The comparison a press is about; nullopt when the mix slot holds no capture. */
@@ -253,7 +261,7 @@ inline juce::String matchReportIdentityKey (const MatchReportIdentity& i)
 {
     juce::Array<juce::var> a { juce::var (i.captureId), juce::var (i.referencePath),
                                juce::var (i.mode == MatchWindowMode::Whole ? "whole" : "loudest30"),
-                               juce::var (i.hops) };
+                               juce::var (i.hops), juce::var (i.afterId) };
     return juce::JSON::toString (juce::var (a), true);
 }
 
@@ -317,6 +325,7 @@ struct MatchPress
     std::optional<MatchReportIdentity> id;
     MatchPressActs acts;
     std::optional<MatchReportPost> report;   ///< set when a post was tried
+    MatchAfter after;                         ///< 8c: what the report's after block came from
 };
 
 inline MatchPress matchPressOn (MatchHost& host, juce::NamedValueSet& page)
@@ -325,10 +334,16 @@ inline MatchPress matchPressOn (MatchHost& host, juce::NamedValueSet& page)
     MatchPress p;
     p.ready = v.ready;
     p.moves = matchBandMoves (v.prop);
+    p.after = matchAfterOf (host.verifyCapture(), v, matchPlanForOf (page));
     p.id    = matchReportIdentityOf (v);
+    if (p.id && p.after.present && host.verifyCapture() != nullptr) p.id->afterId = host.verifyCapture()->id;
     p.acts  = matchPressActs (p.ready.playable, p.id, page);
     if (p.acts.post)
-        p.report = matchPressReport (host, matchHandOffOf (host, v), p.id, page);
+    {
+        auto h = matchHandOffOf (host, v);
+        h.after = matchReportAfterOf (p.after);
+        p.report = matchPressReport (host, h, p.id, page);
+    }
     else if (p.acts.morph)
         page.set (matchPageReportInChatId(), true);   // already in the chat
     return p;

@@ -29,6 +29,7 @@
 #include "EJMatchWindowSides.h" // K1: the window switch, its memory, and the sides over the window
 #include "EJMatchHandOff.h"    // 5a: the page over MatchHost, the mix from its own slot
 #include "EJMatchAudition.h"   // 8b: the audition switch and the level match
+#include "EJMatchAfter.h"      // 8c: the after curve, from the verify capture
 using echojay::kCompareMenuBandSize;
 using echojay::kCompareMenuRefNameLen;
 #include <cmath>
@@ -355,7 +356,8 @@ void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
                      const echojay::MatchSide& mix, const echojay::MatchSide& ref,
                      const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
                      bool anyBins, const std::array<float, 6>& moves, float morph, float phase,
-                     const juce::String& mixName, const juce::String& refName);
+                     const juce::String& mixName, const juce::String& refName,
+                     const echojay::MatchAfter* after = nullptr);
 
 /** THE GUIDES, BEHIND EVERYTHING. Defined beside matchTraceRange because the
     one line the stereo axis gets is placed through that range, and a guide
@@ -1099,6 +1101,9 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             glowTrace (mixTrace, C::blue);
         }
 
+        // 8c: the after side, for the same view the picture is drawn from.
+        const auto after = echojay::matchAfterOf (host->verifyCapture(), view,
+                                                  echojay::matchPlanForOf (getProperties()));
         matchPaintAxis (g, plot, R.readout, axis, sides.mix, sides.ref,
                         mixSmooth, refSmooth,
                         // EITHER side, not both: the message this feeds is
@@ -1108,7 +1113,17 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
                         echojay::matchBandMoves (prop),
                         juce::jlimit (0.0f, 1.0f, morphPos), linkPhase,
                         host->slotDisplayName (*slots.mix),
-                        host->slotDisplayName (*slots.ref));
+                        host->slotDisplayName (*slots.ref), &after);
+
+        // 8c: a verify capture that cannot be compared says why, over the
+        // picture's bottom edge; no verify capture at all says nothing.
+        if (! after.present && after.why.isNotEmpty())
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (10.0f)));
+            g.drawFittedText (after.why, plot.withTrimmedTop (juce::jmax (0, plot.getHeight() - 16)).reduced (6, 0),
+                              juce::Justification::centredLeft, 1);
+        }
 
         // ---- THE REFUSAL, OVER THE PICTURE -------------------------------
         //
@@ -1815,7 +1830,8 @@ void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
                      const echojay::MatchSide& mix, const echojay::MatchSide& ref,
                      const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
                      bool anyBins, const std::array<float, 6>& moves, float morph, float phase,
-                     const juce::String& mixName, const juce::String& refName)
+                     const juce::String& mixName, const juce::String& refName,
+                     const echojay::MatchAfter* after)
 {
     if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
     switch (a)
@@ -1850,6 +1866,30 @@ void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
                                                mixBins, refBins, true);
             matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second,
                                   echojay::matchAxisZoneDb (echojay::MatchAxis::Spectrum), phase);
+
+            // 8c: THE AFTER CURVE (K6). SIX BAND STEPS, NOT A LINE THROUGH SIX
+            // NUMBERS: section 3 forbids inventing shape between band centres,
+            // and the verify capture's figures are six bands. Each step is the
+            // verify capture's band relative over the plan's window, on the
+            // spectrum's own range; a band that got further from the reference
+            // is drawn in the warning colour.
+            if (after != nullptr && after->present)
+            {
+                for (int b = 0; b < 6; ++b)
+                {
+                    const float x0 = echojay::matchFreqToX (plot, echojay::kMacroBandLoHz[(size_t) b]);
+                    const float x1 = b < 5 ? echojay::matchFreqToX (plot, echojay::kMacroBandLoHz[(size_t) b + 1])
+                                           : (float) plot.getRight();
+                    const float y  = echojay::matchDbToY (plot, after->afterRel[(size_t) b], range.first, range.second);
+                    const bool warn = echojay::matchAfterWarns (after->trend[(size_t) b]);
+                    g.setColour ((warn ? MatchC::amber : MatchC::text).withAlpha (0.85f));
+                    g.drawLine (x0, y, x1, y, warn ? 2.0f : 1.5f);
+                }
+                g.setColour (MatchC::text2);
+                g.setFont (juce::Font (juce::FontOptions (9.5f)));
+                g.drawText ("after", plot.withTrimmedTop (2).removeFromTop (12).removeFromRight (40).reduced (2, 0),
+                            juce::Justification::centredRight, true);
+            }
 
             // THE SPECTRUM'S OWN NUMBERS: the six band relatives are the thing
             // the proposal moves, so the row carries the two that a reader
@@ -2686,7 +2726,14 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                                                 echojay::matchPlanAnswered (*panel->host, ok, planId, why));
                     panel->repaint();
                 }, whyNot);
-            if (! sent)
+            if (sent)
+            {
+                // 8c: what this plan was made for, so a verify capture is
+                // compared only on the same reference and window.
+                const auto* ref = host->selectedReference();
+                echojay::matchNotePlanFor (props, view, ref != nullptr ? ref->name : juce::String());
+            }
+            else
             {
                 props.set (echojay::matchPagePlanBusyId(), false);
                 props.set (echojay::matchPagePlanLineId(), whyNot);

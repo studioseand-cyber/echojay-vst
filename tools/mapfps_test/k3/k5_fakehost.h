@@ -48,7 +48,9 @@ struct FakeMatchHost : MatchHost
     {
         return captureForSlotIn (snaps, s);
     }
-    const CaptureSnapshot* verifyCapture() const override { return nullptr; }
+    // 8c: the verify capture, when a pin sets one.
+    std::optional<CaptureSnapshot> verify;
+    const CaptureSnapshot* verifyCapture() const override { return verify ? &*verify : nullptr; }
     const ReferenceResult* selectedReference() const override { return ref ? &*ref : nullptr; }
     std::vector<MatchLink> liveLinks() const override { return links; }
     bool pickMixSlot (const juce::String&, juce::String&) override { return false; }

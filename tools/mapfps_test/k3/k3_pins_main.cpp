@@ -63,6 +63,11 @@
  #include "k8b_pins.h"
  #define EJ_K8B 1
 #endif
+// ROUND 8c's PINS: the after curve and the closed loop.
+#if __has_include("k8c_pins.h")
+ #include "k8c_pins.h"
+ #define EJ_K8C 1
+#endif
 
 int main()
 {
@@ -116,6 +121,9 @@ int main()
 #endif
 #ifdef EJ_K8B
     k8bpins::runK8bPins (check);
+#endif
+#ifdef EJ_K8C
+    k8cpins::runK8cPins (check);
 #endif
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
