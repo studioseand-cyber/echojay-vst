@@ -190,6 +190,14 @@ namespace cmd
     // target. A row cannot test that without being able to press the button, so this calls
     // createNewChat - the same function the sidebar's "+ New chat" calls - and nothing else.
     inline constexpr const char* newChat     = "new_chat";         // { uid } - "" = the main chat
+    // ---- FOLLOWING A REPORT'S LINK (31 Oct 2026, Sean's 13:45 test; Kathy's condition 2) -------
+    //
+    // A successful AI MATCH press posts a card and the page keeps its message id. Her condition is
+    // that following that link opens the card wherever it is and NEVER posts or duplicates, however
+    // many chats he has moved through since. A row cannot test that without being able to follow
+    // the link, so this calls openSessionChatAtMessage - the same call her line will make - and
+    // nothing else.
+    inline constexpr const char* openMessage = "open_message";     // { id } - a chat message's id
     // ---- THE REAL EDITOR'S DIRECTORY AND LEASE (26 Oct 2026, round 1) ---------------------------
     //
     // Round 1 of docs/LIVE_VIEW_REAL_EDITOR_2026-10-26.md is lifetime, lease and ordering, and his

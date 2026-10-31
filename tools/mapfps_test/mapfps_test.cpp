@@ -70,6 +70,7 @@
 #include "EJMatchPage.h"       // the Match screen's geometry and the words it draws
 #include "EJMatchWindow.h"     // C4 sections 6 and 7: crest, PSR, loudest-30, over the hop series
 #include "EJMatchAttribution.h" // C4 sections 2 to 5: routing, sizing and sentences for a band move
+#include "EJMatchChatCard.h"  // 31 Oct: the visible card a successful press leaves
 #include "ma10/ma10_hops.h"    // MA10's offline hop series: the block-size crest pin feeds it audio
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
@@ -18276,6 +18277,187 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "arbitrary number - about 8997 offered to each of two rings that hold 8192",
                    juce::String (dropped) + " dropped, expected about 1610 (measured 1587)");
         }
+    }
+
+    // =================================================================
+    // ci -- A SUCCESSFUL PRESS LEAVES A CARD, AND THE ID IS THE EVIDENCE
+    //       (Sean, 31 Oct 2026, 13:45, on CCB49D4F; Kathy agreeing)
+    //
+    // *"AI MATCH with enough Live audio made a match_report, and the log says
+    // 'offered to the Whole session chat, which is not built yet (U2) -
+    // nothing was posted'. So a successful press shows NOTHING, which reads as
+    // 'the button isn't wired'."*
+    //
+    // Two halves, and both are pure so they can be read here without a window:
+    // the PROSE a card shows (EJMatchChatCard.h), built only out of the
+    // payload's own strings so the report has one author; and the contract that
+    // the page claims "Report in chat" only when an id came back.
+    // =================================================================
+    {
+        std::cout << "a successful press leaves a card, and the id is the evidence:\n";
+
+        // ci PIN1 -- THE PROSE IS THE REPORT'S OWN WORDS, and nothing when there are none.
+        {
+            auto payloadOf = [] (const juce::String& json) { return juce::JSON::parse (json); };
+
+            // A real-shaped payload: the reference's name, the window, two move lines and the
+            // discriminator, which is what matchReportPayload writes.
+            const auto full = payloadOf (R"({"kind":"match_report","window":"whole",
+                 "reference":{"name":"Giant Steps"},
+                 "moves":[{"text":"Ceiling: -1.0 dBTP"},{"text":"Loudness: up 2.4 LU"}],
+                 "discriminator":"Measured over the whole of both."})");
+            const auto text = echojay::matchCardProse (echojay::kMatchReportKind, full);
+            check (text.contains ("Giant Steps"),
+                   "ci PIN1: the card names the reference it is about",
+                   text.replace ("\n", " | ").substring (0, 110));
+            check (text.contains ("Ceiling: -1.0 dBTP") && text.contains ("Loudness: up 2.4 LU"),
+                   "ci PIN1: ...and carries the report's OWN move lines, not a paraphrase of them");
+            check (text.contains ("Measured over the whole of both."),
+                   "ci PIN1: ...and the discriminator sentence");
+
+            // A payload with a heading and nothing else is the silence he found, dressed up.
+            const auto bare = payloadOf (R"({"kind":"match_report","window":"whole",
+                 "reference":{"name":"Giant Steps"},"moves":[]})");
+            check (echojay::matchCardProse (echojay::kMatchReportKind, bare).isEmpty(),
+                   "ci PIN1: a payload with nothing to say posts NO card, rather than a row that "
+                   "says only \"Matched against X\" - which would be the same silence in a bubble");
+            check (echojay::matchCardProse ("something_else", full).isEmpty(),
+                   "ci PIN1: and only a match_report is turned into a card here");
+        }
+
+        // ci PIN2 -- THE WORDS ARE NOT WRITTEN TWICE. The prose must come out of the payload and
+        // out of matchReportHeading, never out of a sentence typed in the card builder: a report
+        // whose wording changes must not leave a second copy behind in the chat.
+        {
+            std::ifstream f ("Source/EJMatchChatCard.h");
+            std::stringstream ss; ss << f.rdbuf();
+            const auto src = codeOnly (juce::String (ss.str()));
+            check (src.isNotEmpty(), "ci PIN2: found EJMatchChatCard.h");
+            check (src.contains ("matchReportHeading"),
+                   "ci PIN2: the heading comes from the report builder's own function");
+            check (src.contains ("getProperty (\"text\"") && src.contains ("\"discriminator\""),
+                   "ci PIN2: and the lines come from the payload the press built");
+            // No string literal in this file that looks like a sentence about the match: the only
+            // quoted text allowed here is a key name or a separator.
+            int sentences = 0, at = 0;
+            while ((at = src.indexOf (at, "\"")) >= 0)
+            {
+                const int end = src.indexOf (at + 1, "\"");
+                if (end < 0) break;
+                const auto lit = src.substring (at + 1, end);
+                if (lit.length() > 14 && lit.containsChar (' ')) ++sentences;
+                at = end + 1;
+            }
+            check (sentences == 0,
+                   "ci PIN2: ...and the card builder contains no sentence of its own, so the "
+                   "report's wording has exactly one author",
+                   juce::String (sentences) + " sentence-like literal(s)");
+        }
+
+        // ci PIN3 -- "REPORT IN CHAT" FOLLOWS THE ID, not the attempt. This is the half that was
+        // wrong in the product: the page set the flag whatever happened, while nothing was posted.
+        {
+            std::ifstream f ("Source/EJMatchHandOff.h");
+            std::stringstream ss; ss << f.rdbuf();
+            const auto src = codeOnly (juce::String (ss.str()));
+            const auto body = codeOnly (functionBody (src, "inline bool matchPostReport"));
+            check (body.contains ("const juce::String id = host.postToSessionChat"),
+                   "ci PIN3: the post's return value is READ, so the page can tell a card that "
+                   "arrived from one that did not");
+            check (body.contains ("if (id.isEmpty())"),
+                   "ci PIN3: ...and an empty id is handled rather than ignored");
+            const int flagAt = body.indexOf ("page.set (matchPageReportInChatId(), true)");
+            const int emptyAt = body.indexOf ("if (id.isEmpty())");
+            check (flagAt > emptyAt && emptyAt >= 0,
+                   "ci PIN3: ...and \"Report in chat\" is set only AFTER the empty case has "
+                   "returned, which is the ordering his 13:45 test needed");
+            check (body.contains ("page.set (matchPageReportMessageId(), id)"),
+                   "ci PIN3: ...and the id is kept on the page, so a second press for the same "
+                   "comparison can open that card instead of posting another (6b)");
+        }
+
+        // ci PIN4 -- THE HOST'S SIDE: the post goes to the chat that is open, and the reveal never
+        // posts. Source pins, because the behaviour needs a window and these are the two claims
+        // that a hand could quietly undo.
+        {
+            std::ifstream f ("Source/EJMatchTab.cpp");
+            std::stringstream ss; ss << f.rdbuf();
+            const auto src = codeOnly (juce::String (ss.str()));
+            const auto post = codeOnly (functionBody (src, "juce::String EchoJayEditor::postToSessionChat"));
+            check (post.contains ("workspace.appendMessageToChat (currentChatId"),
+                   "ci PIN4: the card is written to the chat that is OPEN NOW, which is Sean's "
+                   "ruling until A3's Whole session chat exists");
+            check (post.contains ("workspace.lastStampOf (currentChatId"),
+                   "ci PIN4: ...and its place and id come from the store's stamp, one row with one "
+                   "identity on all three sides");
+            check (post.contains ("return stamped ? id : juce::String()"),
+                   "ci PIN4: ...and an unstamped row returns no id, so the page never shows a link "
+                   "that goes nowhere");
+            const auto open = codeOnly (functionBody (src, "void EchoJayEditor::openSessionChatAtMessage"));
+            check (! open.contains ("appendMessageToChat") && ! open.contains ("postToSessionChat"),
+                   "ci PIN4: opening a message POSTS NOTHING, so no number of opens or chat "
+                   "switches can duplicate a card (Kathy's condition 2)");
+            check (open.contains ("loadChatFromWorkspace"),
+                   "ci PIN4: ...and it opens the chat that holds the message");
+        }
+    }
+
+    // =================================================================
+    // cb -- EVERY CALLBACK THE EDITOR GIVES THE PROCESSOR IS TAKEN BACK
+    //       (31 Oct 2026, found by a rig SIGSEGV)
+    //
+    // The processor holds the editor only through std::functions the editor
+    // assigns in its constructor. Two of six were cleared in the destructor,
+    // so a chat turn finishing after the window closed - which the product
+    // deliberately allows, so an answer is not thrown away - called into a
+    // destroyed editor through nextChatSeq and took the process down.
+    //
+    // This is a COUNTING row, not a list of names: it reads both sites out of
+    // the source and compares them, so a callback added to the constructor
+    // tomorrow fails this row rather than crashing a host in six weeks.
+    // =================================================================
+    {
+        std::cout << "every callback the editor gives the processor is taken back:\n";
+        std::ifstream f ("Source/PluginEditor.cpp");
+        std::stringstream ss; ss << f.rdbuf();
+        const auto src = codeOnly (juce::String (ss.str()));
+
+        auto namesOf = [&src] (const juce::String& suffix)
+        {
+            juce::StringArray out;
+            int at = 0;
+            while ((at = src.indexOf (at, "processorRef.")) >= 0)
+            {
+                const int nameAt = at + 13;
+                int end = nameAt;
+                while (end < src.length()
+                       && (juce::CharacterFunctions::isLetterOrDigit (src[end]) || src[end] == '_'))
+                    ++end;
+                const auto name = src.substring (nameAt, end);
+                const auto rest = src.substring (end, juce::jmin (src.length(), end + 24)).removeCharacters (" ");
+                if (rest.startsWith (suffix)) out.addIfNotAlreadyThere (name);
+                at = end;
+            }
+            out.sort (true);
+            return out;
+        };
+
+        const auto given = namesOf ("=[");          // assigned a lambda in the constructor
+        const auto taken = namesOf ("=nullptr");    // cleared, wherever that happens
+
+        check (given.size() >= 6,
+               "cb PIN1: found the callbacks the editor gives the processor",
+               juce::String (given.size()) + ": " + given.joinIntoString (", "));
+
+        juce::StringArray missing;
+        for (const auto& g : given)
+            if (! taken.contains (g)) missing.add (g);
+        check (missing.isEmpty(),
+               "cb PIN1: and EVERY one of them is set back to nullptr, so a callback arriving after "
+               "the window closed cannot reach a destroyed editor - the SIGSEGV of 31 Oct was "
+               "nextChatSeq, reached by a chat turn finishing after the close",
+               missing.isEmpty() ? juce::String ("none left registered")
+                                 : "STILL REGISTERED AT DESTRUCTION: " + missing.joinIntoString (", "));
     }
 
     // ---- AND NO SIGNATURE WENT UNREAD (30 Oct 2026) ------------------------------------------

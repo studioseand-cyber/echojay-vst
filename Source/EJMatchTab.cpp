@@ -28,6 +28,7 @@
 #include "EJCompareMenuIds.h"   // the menu id bands the mix picker decodes
 #include "EJMatchWindowSides.h" // K1: the window switch, its memory, and the sides over the window
 #include "EJMatchHandOff.h"    // 5a: the page over MatchHost, the mix from its own slot
+#include "EJMatchChatCard.h"   // the visible card a successful press leaves (31 Oct)
 #include "EJMatchAudition.h"   // 8b: the audition switch and the level match
 #include "EJMatchAfter.h"      // 8c: the after curve, from the verify capture
 using echojay::kCompareMenuBandSize;
@@ -3114,12 +3115,106 @@ void EchoJayEditor::setAudible (echojay::MatchRefSide side)
     toggleCompareAudible (side == echojay::MatchRefSide::Top);
 }
 
-void EchoJayEditor::postToSessionChat (const juce::String& kind, const juce::var&)
+juce::String EchoJayEditor::postToSessionChat (const juce::String& kind, const juce::var& payload)
 {
-    // U2 builds the Whole session chat. Until it exists there is nowhere to post to, and saying so is
-    // better than dropping a card on the floor.
-    EchoJay_NSLog (("EJMatch: a \"" + kind + "\" card was offered to the Whole session chat, which is "
-                    "not built yet (U2) - nothing was posted").toRawUTF8());
+    // ---- A SUCCESSFUL PRESS MUST SHOW SOMETHING (Sean, 31 Oct 2026, 13:45) -----------------
+    //
+    // This logged "offered to the Whole session chat, which is not built yet (U2) - nothing was
+    // posted" and dropped the card. His words for what that is from the outside: *"a successful
+    // press shows NOTHING, which reads as 'the button isn't wired'."*  It is 2a's fault in the
+    // other direction - a press that worked, reaching a person as silence.
+    //
+    // His ruling, Kathy agreeing: until A3's Whole session chat exists the card goes to the chat
+    // that is OPEN NOW, and the id comes back so her "Report in chat" line appears only when a card
+    // really arrived.
+    const juce::String text = echojay::matchCardProse (kind, payload);
+    if (text.isEmpty())
+    {
+        // NOT a silent drop: a payload with nothing readable in it is worth one line, because the
+        // press thought it had something to say.
+        EchoJay_NSLog (("EJMatch: a \"" + kind + "\" card carried nothing a person could read, so "
+                        "nothing was posted and the page is told so (an empty id)").toRawUTF8());
+        return {};
+    }
+    if (currentChatId.isEmpty())
+    {
+        EchoJay_NSLog (("EJMatch: a \"" + kind + "\" card had no chat to go to (no chat is open), so "
+                        "nothing was posted. Until A3's Whole session chat exists this card needs an "
+                        "open chat, and the page shows no link rather than a dead one").toRawUTF8());
+        return {};
+    }
+
+    // THE STORE GOES FIRST, and the row takes its place and its identity from the stamp the store
+    // gives - appendLocalUserBubble's rule, for the same reason: one row, one place, one identity
+    // on all three sides. The payload travels as `figuresJson` so a later renderer can draw the
+    // full card from the same bytes the server was sent.
+    workspace.appendMessageToChat (currentChatId, "assistant", text, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+                                   juce::JSON::toString (payload));
+    juce::int64 seq = 0; juce::String id;
+    const bool stamped = workspace.lastStampOf (currentChatId, seq, id);
+
+    ChatMsg cm; cm.role = "assistant"; cm.content = text;
+    cm.seq = seq; cm.entryId = id; cm.chatId = currentChatId;
+    chatMessages.push_back (cm);
+    {
+        EchoJayProcessor::ChatEntry ce; ce.role = "assistant"; ce.content = text;
+        ce.chatId = currentChatId; ce.seq = seq; ce.entryId = id;
+        processorRef.appendChatEntry (std::move (ce), currentChatId);
+    }
+    processorRef.chatRoles.add ("assistant");
+    processorRef.chatContents.add (text);
+    workspace.requestMutationSync();
+    chatScroll.pinnedToBottom = true;      // the card he just asked for is the thing to show
+    followBottomIfPinned();
+    repaint();
+
+    EchoJay_NSLog (("EJMatch: a \"" + kind + "\" card was POSTED to chat " + currentChatId
+                    + (stamped ? " as message " + id : juce::String (" with NO id: the store gave no "
+                        "stamp, so the card is visible but cannot be linked to, and the page is told "
+                        "so (an empty id) rather than shown a link that goes nowhere"))).toRawUTF8());
+    return stamped ? id : juce::String();
+}
+
+void EchoJayEditor::openSessionChatAtMessage (const juce::String& messageId)
+{
+    // READ ONLY. It opens and reveals; it never posts, so no number of calls can duplicate a card.
+    if (messageId.isEmpty()) return;
+
+    // ALREADY ON SCREEN? Then this is only a scroll, and the chat it belongs to is already open.
+    for (const auto& m : chatMessages)
+        if (m.entryId == messageId)
+        {
+            revealEntryId_ = messageId;
+            revealRowTop_  = -1;          // the next paint finds it
+            chatScroll.pinnedToBottom = false;
+            repaint();
+            EchoJay_NSLog (("EJMatch: openSessionChatAtMessage " + messageId
+                            + " - already in the open chat, revealing it").toRawUTF8());
+            return;
+        }
+
+    // OTHERWISE THE CHAT THAT HOLDS IT, asked of the session's own log rather than guessed. Every
+    // card this build posts is written there with its chatId and entryId stamped at creation (the
+    // 22 Oct rule: a row's chat is the one stamped on it, never the one on screen), so the row the
+    // page is linking to is in here by construction. A message from an earlier session is not, and
+    // the log below says so rather than this opening something arbitrary.
+    juce::String chatId;
+    for (const auto& e : processorRef.chatHistory)
+        if (e.entryId == messageId) { chatId = e.chatId; break; }
+    if (chatId.isEmpty())
+    {
+        EchoJay_NSLog (("EJMatch: openSessionChatAtMessage " + messageId + " - no chat holds that "
+                        "message, so nothing was opened. A link that points at nothing is better "
+                        "ignored than followed somewhere arbitrary").toRawUTF8());
+        return;
+    }
+    loadChatFromWorkspace (chatId);
+    revealEntryId_ = messageId;
+    revealRowTop_  = -1;
+    chatScroll.pinnedToBottom = false;
+    repaint();
+    EchoJay_NSLog (("EJMatch: openSessionChatAtMessage " + messageId + " - opened chat " + chatId
+                    + " and revealing the row").toRawUTF8());
 }
 
 void EchoJayEditor::draftPlan (const juce::var&,

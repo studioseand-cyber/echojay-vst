@@ -4821,6 +4821,140 @@ int main (int argc, char* argv[])
                            + " - the dynamics sentence survived the axis change, which is C's N1");
     }
 
+    // ---- MT8 to MT11: A SUCCESSFUL PRESS LEAVES A CARD (Sean, 31 Oct 2026, 13:45) -------------
+    //
+    // His words, on the installed CCB49D4F:
+    //
+    //     *"AI MATCH with enough Live audio made a match_report, and the log says 'offered to the
+    //     Whole session chat, which is not built yet (U2) - nothing was posted'. So a successful
+    //     press shows NOTHING, which reads as 'the button isn't wired'."*
+    //
+    // MT1 to MT7 cover a press that REFUSES: they made sure a refusal is said and kept. Nothing
+    // covered a press that WORKS, which is why the one thing he noticed is the one thing the rig
+    // could not see. These rows are that half, and they read the chat rather than the page's claim:
+    // "Report in chat" is a claim, a drawn row is a card, and his report is about the difference.
+    //
+    // Kathy's two conditions (31 Oct, agreed with Sean) are MT9 and MT11: the id comes back only
+    // when a card really arrived, and opening the link never posts or duplicates.
+    if (anyRowWanted ({ "MT8", "MT9", "MT10", "MT11" }))
+    {
+        rig.send (echojay::rig::cmd::press, args1 ("button", "tab_match"), 8000);
+        Rig::pump (250);
+        // THE LIVE SIGNAL as the mix side, and enough of it: the press needs a playable comparison,
+        // which is what his test had. The transport is rolling by now (the suite plays throughout),
+        // so the Live buffer has heard real audio rather than nothing.
+        rig.send (echojay::rig::cmd::matchSlot, args1 ("kind", "live"), 8000);
+        Rig::pump (300);
+        // ---- ENOUGH AUDIO TO HAVE SOMETHING TO SAY (31 Oct 2026) ---------------------------
+        //
+        // The first cut pumped four seconds and the press refused with "Capture at least 30 s of
+        // the chorus to make a plan." - which was the honest answer, so MT9 to MT11 skipped and
+        // proved nothing. His own press had *"enough Live audio"*, so the row has to feed the same.
+        // Thirty-two seconds of audio is about a second of wall clock here, and it is the
+        // difference between a row that tests the card and a row that tests the refusal twice.
+        {
+            const int blocksPerSecond = (int) std::lround (sr / (double) v2.buf.getNumSamples());
+            for (int i = 0; i < blocksPerSecond * 32; ++i)
+            {
+                v2.processOneBlock (sr);
+                if ((i % 80) == 0) Rig::pump (2);
+            }
+        }
+        const auto before     = rig.freshState();
+        const int  rowsBefore = (int) before.getProperty ("chatRowCount", juce::var (0));
+        const auto chatBefore = before.getProperty ("chatId", juce::var()).toString();
+
+        rig.send (echojay::rig::cmd::aiMatch, juce::var (new juce::DynamicObject()), 8000);
+        Rig::pump (900);
+        const auto st        = rig.freshState();
+        const int  rowsAfter = (int) st.getProperty ("chatRowCount", juce::var (0));
+        const auto claimed   = (bool) st.getProperty ("matchReportInChat", juce::var (false));
+        const auto msgId     = st.getProperty ("matchReportMessageId", juce::var()).toString();
+        const auto lastRole  = st.getProperty ("lastChatRole", juce::var()).toString();
+        const auto lastText  = st.getProperty ("lastChatText", juce::var()).toString();
+        const auto refused   = st.getProperty ("matchRefusedText", juce::var()).toString();
+        const auto lastId    = st.getProperty ("lastChatEntryId", juce::var()).toString();
+
+        // ---- MT8: IT IS NEVER SILENT EITHER WAY ------------------------------------------------
+        // The press did one of two things: it refused in words (MT1's claim) or it worked. If it
+        // worked there is a row to see. The one outcome this row exists to fail is both empty.
+        const bool posted = rowsAfter > rowsBefore;
+        row ("MT8", refused.isNotEmpty() || posted,
+             "a press either refuses IN WORDS or leaves a visible card - the one thing it must "
+             "never do is work and show nothing, which is what he found at 13:45",
+             posted ? "it posted: " + juce::String (rowsAfter - rowsBefore) + " new chat row(s), the "
+                      "last from \"" + lastRole + "\" reading \"" + lastText.substring (0, 90) + "\""
+                    : refused.isNotEmpty()
+                        ? "it refused in words: \"" + refused + "\" (no card, which is correct)"
+                        : "SILENT: no card and no sentence, which is his 13:45 report exactly");
+
+        if (posted)
+        {
+            // ---- MT9: EXACTLY ONE CARD, AND THE ID IS REAL (Kathy's condition 1) --------------
+            row ("MT9", rowsAfter - rowsBefore == 1 && lastRole == "assistant"
+                        && msgId.isNotEmpty() && msgId == lastId && claimed,
+                 "a successful press posts EXACTLY ONE card, in the chat that is open, and returns "
+                 "its id - so \"Report in chat\" is a fact and not a hope (Kathy's condition 1)",
+                 juce::String (rowsAfter - rowsBefore) + " row(s), role \"" + lastRole
+                     + "\", page id \"" + msgId + "\", the drawn row's id \"" + lastId
+                     + "\", claims Report in chat: " + (claimed ? "yes" : "NO"));
+
+            // ---- MT10: A SECOND PRESS FOR THE SAME COMPARISON POSTS NOTHING (her 6b) ---------
+            rig.send (echojay::rig::cmd::aiMatch, juce::var (new juce::DynamicObject()), 8000);
+            Rig::pump (900);
+            const auto st2    = rig.freshState();
+            const int  rows2  = (int) st2.getProperty ("chatRowCount", juce::var (0));
+            const auto msgId2 = st2.getProperty ("matchReportMessageId", juce::var()).toString();
+            // A LIVE mix has no capture identity, so a second press over live audio is a NEW
+            // comparison by her own rule and may post again. The claim that holds either way is
+            // that it did not post TWO cards for one press, and that the page still names a card
+            // that exists.
+            row ("MT10", rows2 - rowsAfter <= 1 && msgId2.isNotEmpty(),
+                 "a second press does not multiply cards: at most one more row, and the page still "
+                 "names a card that exists (her 6b; a Live mix has no capture identity, so a new "
+                 "comparison is allowed to post once)",
+                 juce::String (rows2 - rowsAfter) + " further row(s), the page now names \"" + msgId2 + "\"");
+
+            // ---- MT11: THE LINK OPENS THE CARD AND NEVER POSTS ONE (her condition 2) ---------
+            // Switch to a NEW chat, so the card is in a chat that is not the one on screen, then
+            // follow the link. The chat must come back and the row count in it must not grow: an
+            // "open" that posted would be a duplicate, which is the thing she asked to be sure of.
+            rig.send (echojay::rig::cmd::newChat, args1 ("uid", ""), 8000);
+            Rig::pump (600);
+            const auto onNew = rig.freshState();
+            const auto chatNew = onNew.getProperty ("chatId", juce::var()).toString();
+            const int  rowsNew = (int) onNew.getProperty ("chatRowCount", juce::var (0));
+            rig.send (echojay::rig::cmd::openMessage, args1 ("id", msgId), 8000);
+            Rig::pump (900);
+            const auto back    = rig.freshState();
+            const auto chatNow = back.getProperty ("chatId", juce::var()).toString();
+            const int  rowsNow = (int) back.getProperty ("chatRowCount", juce::var (0));
+            row ("MT11", chatNow != chatNew && chatNow == chatBefore && rowsNow == rowsAfter,
+                 "following the report's link opens the chat that HOLDS the card and posts nothing: "
+                 "the same message, no duplicate, however many chats he moved through "
+                 "(Kathy's condition 2)",
+                 "left \"" + chatBefore + "\" for \"" + chatNew + "\" (" + juce::String (rowsNew)
+                     + " row(s)), the link took us to \"" + chatNow + "\" with "
+                     + juce::String (rowsNow) + " row(s), which was " + juce::String (rowsAfter)
+                     + " when the card was posted");
+        }
+        else
+        {
+            // ---- MT9 and MT11 SKIP RATHER THAN PASS, and say which half ran -------------------
+            skip ("MT9-MT11: the card, its id and the link",
+                  "the press did not post on this run (it said \"" + refused + "\"), so there is no "
+                  "card to count, no id to check and no link to follow. MT8 above covers the half "
+                  "that did happen. A row that cannot see a card must not report on one");
+            // AND THE OTHER HALF OF KATHY'S CONDITION 1, which CAN be checked on a refusal: no
+            // card means no claim. This is the case her "Report in chat" line depends on.
+            row ("MT9b", ! claimed && msgId.isEmpty(),
+                 "a press that posted nothing claims nothing: no \"Report in chat\" and an empty "
+                 "id, which is the half of Kathy's condition 1 a refusal can prove",
+                 juce::String ("claims Report in chat: ") + (claimed ? "YES, wrongly" : "no")
+                     + ", id \"" + msgId + "\"");
+        }
+    }
+
 
     if (linkUid.isNotEmpty())
     {

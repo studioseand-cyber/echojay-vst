@@ -41,6 +41,7 @@
                                     // its generated header reaches EchoJay's TUs only
 #include "EJMatchProposal.h"        // the proposal the Match screen draws
 #include "EJMatchPage.h"            // that screen's geometry and its sentences
+#include "EJMatchHandOff.h"        // 31 Oct: the page keys the posted card's id lives under
 #include "EedDeviceRegistry.h"   // built-in editing copies (fix 2)
 #include "EedKeyDetectorProcessor.h"
 #include "EedKeyFeed.h"   // COMMIT 4: KeyDisplayPrefs (keyShowRelative)
@@ -4070,6 +4071,27 @@ EchoJayEditor::~EchoJayEditor() {
     // pointer to us other than through this std::function.
     processorRef.onDashUnreadChanged = nullptr;
     processorRef.onAgentChangedRack  = nullptr;   // SEAN'S #3: cleared FIRST, same contract
+    // ---- AND THE FOUR THAT WERE NOT CLEARED (31 Oct 2026, found by a rig SIGSEGV) -----------
+    //
+    // The comment above says "the processor never holds a pointer to us other than through this
+    // std::function", and it was true of the two named. It was not true of SIX. The rig crashed
+    // with EXC_BAD_ACCESS on the main thread in this exact shape:
+    //
+    //   EchoJayAPI::classify's callback -> sendChatMessage's lambda -> notifyChatTurnFinalised
+    //     -> appendChatEntry -> stampChatEntry -> nextChatSeq(...) -> a lambda of a DESTROYED editor
+    //
+    // which is the road the block below deliberately opens: a turn is handed to the processor so
+    // closing the window mid-answer does not throw the answer away. That feature is right, and it
+    // is what makes an uncleared callback reachable - the answer arrives when the editor has gone,
+    // and the first thing stamping its row does is ask the editor for a sequence number.
+    //
+    // In a host that is: send a message, close the plugin window, and the reply takes the host down.
+    // Every one of these is cleared here, and a pin now checks the two lists against each other so
+    // the next callback added to the constructor cannot be forgotten here.
+    processorRef.nextChatSeq          = nullptr;   // the crash above: stampChatEntry asks on every row
+    processorRef.onCaptureSaveComplete = nullptr;
+    processorRef.onBorrowCopyStale    = nullptr;
+    processorRef.onLiveCopyStale      = nullptr;
 
     // ---- ITEM 4 (Sean, 13 Oct 2026): THE TURN IS HANDED OVER, NOT KILLED --------------------------------
     //
@@ -23370,6 +23392,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
         ++msgLoopIndex;
         bool isUser = (msg.role == "user");
 
+        // ---- WHERE THE ROW openSessionChatAtMessage IS AFTER ACTUALLY IS (31 Oct 2026) -------
+        // The chat is painted by the editor with a running y, so the only place that knows a row's
+        // position is this loop. It records it in the CONTENT's coordinates (the scroll added back
+        // on) and the timer does the scrolling, because a paint must not move the viewport it is
+        // painting into. One comparison per row while a reveal is pending, and none otherwise.
+        if (! revealEntryId_.isEmpty() && msg.entryId == revealEntryId_)
+            revealRowTop_ = msgY + scrollOffset;
+
         // Capture messages get a unified card (waveform + label row) instead of
         // the text-bubble + waveform-card pattern. Always 56 px regardless of
         // content length so the layout stays predictable.
@@ -26158,6 +26188,39 @@ void EchoJayEditor::timerCallback()
     //  number: the longest and the mean over the last second. Two doubles and a compare - and it
     //  is the thing the real-host test reads, so it can never drift from what he feels.
     const double tickT0 = juce::Time::getMillisecondCounterHiRes();
+
+    // ---- THE REVEAL openSessionChatAtMessage ASKED FOR (31 Oct 2026) ----------------------
+    //
+    // The paint found the row's place (see the chat loop); this moves the viewport, because a paint
+    // must not scroll the thing it is drawing. programmaticScroll is held across the move: without
+    // it visibleAreaChanged reads this as a user scroll and unpins the bottom for good.
+    //
+    // A reveal that no paint can place (the row is not in this chat, or the panel is not showing)
+    // is dropped after a second rather than left armed for ever, and it says so.
+    if (! revealEntryId_.isEmpty())
+    {
+        if (revealRowTop_ >= 0)
+        {
+            chatScroll.programmaticScroll = true;
+            chatScroll.setViewPosition (0, juce::jmax (0, revealRowTop_ - 24));
+            chatScroll.programmaticScroll = false;
+            EchoJay_NSLog (("EJMatch: revealed message " + revealEntryId_ + " at y="
+                            + juce::String (revealRowTop_)).toRawUTF8());
+            revealEntryId_.clear();
+            revealRowTop_ = -1;
+            revealTicks_  = 0;
+        }
+        else if (++revealTicks_ > 30)    // this timer is 30 Hz: about a second of looking
+        {
+            EchoJay_NSLog (("EJMatch: message " + revealEntryId_ + " was not drawn in a second of "
+                            "painting, so the reveal is given up rather than left armed. The chat "
+                            "holding it is open; the row is above or below what is rendered")
+                               .toRawUTF8());
+            revealEntryId_.clear();
+            revealTicks_ = 0;
+        }
+    }
+
     processorRef.serviceCaptureStop();   // the transport-stop capture end, off the audio thread (8 Sep 2026)
     pumpPendingLinkApplies();
     pumpPendingChainBuilds();   // 19 Oct: the Build press waits on the same pump            // item 4 (12 Oct 2026): dials queued while the rack was connecting
@@ -38850,6 +38913,17 @@ void EchoJayEditor::serviceRigHook()
         note = "new chat requested (uid \"" + uid + "\"), chat " + beforeChat + " -> " + currentChatId
              + (wasActive ? ", a run WAS live when it was pressed" : ", no run was live");
     }
+    else if (c.name == echojay::rig::cmd::openMessage)
+    {
+        // The page's own call, nothing else: openSessionChatAtMessage reads and reveals, so a row
+        // can prove that following a report's link cannot post or duplicate a card.
+        const auto id = c.args.getProperty ("id", juce::var()).toString();
+        const auto beforeChat = currentChatId;
+        const int  beforeRows = (int) chatMessages.size();
+        openSessionChatAtMessage (id);
+        note = "open_message \"" + id + "\": chat " + beforeChat + " -> " + currentChatId
+             + ", rows " + juce::String (beforeRows) + " -> " + juce::String ((int) chatMessages.size());
+    }
     else if (c.name == echojay::rig::cmd::reportState)
     {
         note = "state written";
@@ -39115,6 +39189,28 @@ void EchoJayEditor::publishRigState()
     o->setProperty ("matchRefusedBadge", matchPanel_.refusedBadge);
     o->setProperty ("matchRefusedFor",   matchPanel_.refusedFor);
     o->setProperty ("matchMorphing",     matchPanel_.morphing);
+    // ---- AND WHAT A SUCCESSFUL PRESS LEFT BEHIND (Sean, 31 Oct 2026, 13:45) ----------------
+    //
+    // *"a successful press shows NOTHING, which reads as 'the button isn't wired'."*  No row could
+    // see whether a press left a card, so the one thing he actually noticed was the one thing the
+    // rig could not check. These are the facts a row needs: whether the page CLAIMS a card, the id
+    // it claims (empty when none), and what the chat really holds, so a claim and a card can be
+    // compared rather than one being taken for the other.
+    o->setProperty ("matchReportInChat",
+                    (bool) matchPanel_.getProperties().getWithDefault (echojay::matchPageReportInChatId(), false));
+    o->setProperty ("matchReportMessageId",
+                    matchPanel_.getProperties().getWithDefault (echojay::matchPageReportMessageId(), juce::var()).toString());
+    o->setProperty ("chatId",       currentChatId);
+    o->setProperty ("chatRowCount", (int) chatMessages.size());
+    if (! chatMessages.empty())
+    {
+        const auto& last = chatMessages.back();
+        o->setProperty ("lastChatRole",    last.role);
+        o->setProperty ("lastChatEntryId", last.entryId);
+        // TRUNCATED, because a report is long and a rig state file is read on every poll; 160
+        // characters is enough for a row to recognise the card and far short of a transcript.
+        o->setProperty ("lastChatText",    last.content.substring (0, 160));
+    }
     {
         const auto pair = matchSlots();
         // THE NAME, not the enum's number: a row in another translation unit cannot see

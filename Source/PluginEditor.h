@@ -1264,7 +1264,14 @@ private:
     bool pickMixSlot       (const juce::String& name, juce::String& why) override;
     bool pickReferenceSlot (const juce::String& name, juce::String& why) override;
     void setAudible (echojay::MatchRefSide side) override;
-    void postToSessionChat (const juce::String& kind, const juce::var& payload) override;
+    juce::String postToSessionChat (const juce::String& kind, const juce::var& payload) override;
+    void openSessionChatAtMessage (const juce::String& messageId) override;
+    /** The row openSessionChatAtMessage is taking him to, and where the paint found it.
+        revealRowTop_ is in the chat content's own coordinates (the paint adds the scroll back on),
+        and -1 means this paint has not seen the row yet - the chat may not even be loaded. */
+    juce::String revealEntryId_;
+    int          revealRowTop_ = -1;
+    int          revealTicks_  = 0;   ///< ticks spent waiting for a paint to place the row
     void draftPlan (const juce::var& matchBlock,
                     std::function<void (bool, juce::String, juce::String)> cb) override;
     void openSessionChatAt (const juce::String& planId) override;

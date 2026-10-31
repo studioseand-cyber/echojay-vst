@@ -66,6 +66,11 @@ inline constexpr const char* kMatchReportInChatLabel = "Report in chat";
 /** The page's hand-off state lives in the panel's own properties: MatchPanel
     is declared in A's PluginEditor.h and gains no members. */
 inline juce::Identifier matchPageReportInChatId() { return "ejMatchReportInChat"; }
+
+/** THE POSTED CARD'S MESSAGE ID (A, 31 Oct 2026). Empty when no card was posted. The page shows
+    "Report in chat" only when this is set, and a press for a comparison that already has one opens
+    that message rather than posting again. */
+inline juce::Identifier matchPageReportMessageId() { return "matchReportMessageId"; }
 inline juce::Identifier matchPagePlanLineId()     { return "ejMatchPlanLine"; }
 inline juce::Identifier matchPagePlanBusyId()     { return "ejMatchPlanBusy"; }
 inline juce::Identifier matchPageLastReportId()   { return "ejMatchLastReport"; }
@@ -217,8 +222,21 @@ inline bool matchPostReport (MatchHost& host, const MatchHandOff& h, juce::Named
 {
     const juce::var payload = matchReportVar (h, host.hasCap (kMatchPlanCap), host.agentOn());
     if (! payload.isObject()) return false;
-    host.postToSessionChat (kMatchReportKind, payload);
+    // ---- THE ID IS THE FACT (A, 31 Oct 2026; R6-1 pulled forward) --------------------------
+    //
+    // This used to call postToSessionChat for effect and set "Report in chat" whatever happened -
+    // and until today nothing was posted at all, so the page claimed a card that did not exist
+    // while Sean saw silence. The id is the evidence: the line goes up only when a card really
+    // arrived, and matchPageReportMessageId carries the handle so a repeated press for the same
+    // comparison can point at THAT card instead of posting a second one (6b).
+    const juce::String id = host.postToSessionChat (kMatchReportKind, payload);
+    if (id.isEmpty())
+    {
+        page.set (matchPageReportInChatId(), false);
+        return false;
+    }
     page.set (matchPageReportInChatId(), true);
+    page.set (matchPageReportMessageId(), id);
     return true;
 }
 

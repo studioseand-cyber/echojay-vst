@@ -180,7 +180,26 @@ struct MatchHost
     virtual void seekCompareStream (int slotIdx, float fraction) = 0;
 
     // ---- the plan, and the chat ---------------------------------------------------------------
-    virtual void postToSessionChat (const juce::String& kind, const juce::var& payload) = 0;
+    /** Posts a card to the session chat and RETURNS THE MESSAGE'S ID, empty when nothing was
+        posted (Kathy's R6-1 option 1, pulled forward on 31 Oct 2026 after Sean's 13:45 test).
+
+        The id is what makes "Report in chat" truthful: the page shows that line only when a card
+        really arrived, and openSessionChatAtMessage takes the page back to this exact card.
+
+        SYNCHRONOUS, deliberately. An id that arrives later cannot be used by the press that caused
+        it, and a page that has to wait for one would be showing a promise rather than a fact.
+
+        Until A3's Whole session chat exists the card goes to the chat that is OPEN NOW (Sean's
+        ruling, Kathy agreeing), never into nothing - which is what it did until today. */
+    virtual juce::String postToSessionChat (const juce::String& kind, const juce::var& payload) = 0;
+
+    /** Opens the chat that holds `messageId` and brings that message into view.
+
+        READ ONLY: it never posts and never duplicates, however many times it is called and
+        whichever chat is open when it is. A repeated press for the same comparison points here
+        instead of posting a second card (Kathy's 6b). A messageId that no chat holds is a no-op
+        that says so in the log rather than opening something arbitrary. */
+    virtual void openSessionChatAtMessage (const juce::String& messageId) = 0;
     virtual void draftPlan (const juce::var& matchBlock,
                             std::function<void (bool ok, juce::String planId, juce::String why)> cb) = 0;
     virtual void openSessionChatAt (const juce::String& planId) = 0;

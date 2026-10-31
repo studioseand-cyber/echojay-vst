@@ -60,7 +60,23 @@ struct FakeMatchHost : MatchHost
     std::vector<MatchRefSide> audibleCalls;
     void setAudible (MatchRefSide s) override { audibleCalls.push_back (s); }
     void seekCompareStream (int, float) override {}
-    void postToSessionChat (const juce::String& kind, const juce::var& payload) override { posts.push_back ({ kind, payload }); }
+    // ---- THE POST ANSWERS WITH AN ID (A, 31 Oct 2026, R6-1 pulled forward) ----------------
+    //
+    // postToSessionChat returns the posted message's id, empty when nothing was posted, so the
+    // page can only claim "Report in chat" when a card really arrived. This fake mints a readable
+    // one per post and can be told to refuse, which is the case the page's line depends on.
+    bool postRefuses = false;                 ///< set true to make the next post land nowhere
+    juce::String postToSessionChat (const juce::String& kind, const juce::var& payload) override
+    {
+        if (postRefuses) return {};
+        posts.push_back ({ kind, payload });
+        return "fake-msg-" + juce::String ((int) posts.size());
+    }
+    /** Every openSessionChatAtMessage, in order, so a pin can assert the page LINKED rather than
+        posted again. Its own array: `opened` below already holds the plan ids openSessionChatAt
+        was given, and one list holding two kinds of handle is a list that proves neither. */
+    juce::StringArray openedMessages;
+    void openSessionChatAtMessage (const juce::String& messageId) override { openedMessages.add (messageId); }
     void draftPlan (const juce::var& block, std::function<void (bool, juce::String, juce::String)> cb) override
     {
         drafts.push_back (block);
