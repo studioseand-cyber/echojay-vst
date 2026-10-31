@@ -54,7 +54,9 @@ struct FakeMatchHost : MatchHost
     bool pickMixSlot (const juce::String&, juce::String&) override { return false; }
     bool pickReferenceSlot (const juce::String&, juce::String&) override { return false; }
     void openReferenceBrowser (bool) override {}
-    void setAudible (MatchRefSide) override {}
+    // 8b: what the audition switch asked for, in order.
+    std::vector<MatchRefSide> audibleCalls;
+    void setAudible (MatchRefSide s) override { audibleCalls.push_back (s); }
     void seekCompareStream (int, float) override {}
     void postToSessionChat (const juce::String& kind, const juce::var& payload) override { posts.push_back ({ kind, payload }); }
     void draftPlan (const juce::var& block, std::function<void (bool, juce::String, juce::String)> cb) override

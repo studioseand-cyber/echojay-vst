@@ -1308,7 +1308,7 @@ inline juce::String matchProvenanceText (const SpectralEvidence& mix, const Spec
 // line needs, the reference's key, the mix slot's own capture, the page's
 // proposal, the plan's uncapped proposal, and the readiness: the one line,
 // `playable` (the press has a move to play) and `possible` (the line is the
-// optimistic one).
+// optimistic one). Since round 8b, also the level gap the audition line shows.
 //
 // A WINDOW ASKED FOR AND NOT TAKEN REFUSES. In "Loudest 30 s" a side that
 // cannot be windowed (a reference with no hop series or under 30 s, a Live
@@ -1341,6 +1341,12 @@ struct MatchPageView
     MatchProposal  prop, plan;
     /** The one line, playable and possible. */
     MatchReadiness ready;
+    /** THE LEVEL GAP (round 8b): the reference minus the mix, LUFS, for this
+        window. "Whole song": each side's integrated. "Loudest 30 s": each
+        side's own window, the measure the window is chosen by. Absent when
+        either figure is not measured, or the window was not taken; the
+        audition line then says nothing about level. */
+    std::optional<float> levelGapDb;
 };
 
 /** THE PAGE VIEW for one window.
@@ -1374,6 +1380,18 @@ inline MatchPageView matchPageFor (const Host& host, MatchWindowMode window, con
     v.prop  = computeMatchProposal (v.w.mix, v.w.ref);
     v.plan  = computeMatchProposal (v.w.mix, v.w.ref, MatchProposalFor::Plan);
     v.ready = matchReadiness (v.prop, v.ctx);
+
+    if (window == MatchWindowMode::Whole)
+    {
+        if (v.w.mix.integrated > -99.0f && v.w.ref.integrated > -99.0f)
+            v.levelGapDb = v.w.ref.integrated - v.w.mix.integrated;
+    }
+    else if (v.w.windowed && v.mixCapture && ref != nullptr && v.w.mixWindow && v.w.refWindow)
+    {
+        const auto m = matchWindowLufs (v.mixCapture->hopFrames, *v.w.mixWindow);
+        const auto r = matchWindowLufs (ref->hopFrames, *v.w.refWindow);
+        if (m && r) v.levelGapDb = (float) (*r - *m);
+    }
     return v;
 }
 

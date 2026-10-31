@@ -28,6 +28,7 @@
 #include "EJCompareMenuIds.h"   // the menu id bands the mix picker decodes
 #include "EJMatchWindowSides.h" // K1: the window switch, its memory, and the sides over the window
 #include "EJMatchHandOff.h"    // 5a: the page over MatchHost, the mix from its own slot
+#include "EJMatchAudition.h"   // 8b: the audition switch and the level match
 using echojay::kCompareMenuBandSize;
 using echojay::kCompareMenuRefNameLen;
 #include <cmath>
@@ -405,6 +406,12 @@ static std::pair<float, float> matchTraceRange (echojay::MatchAxis a);
 using echojay::MatchPageView;
 using echojay::matchPageFor;
 using echojay::matchSelectedWindow;
+
+// 8b: THE LEVEL MATCH'S PORT. MatchHost has no setReferenceGainDb on this base
+// (REQUESTS_FOR_A_8, R8-1), so there is no port and the page offers no toggle:
+// it shows the gap line only. When A's call lands, this returns an adapter over
+// it, and nothing else on the page changes.
+static echojay::MatchReferenceGainPort* matchLevelPortOf (echojay::MatchHost&) { return nullptr; }
 
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {
@@ -1249,6 +1256,48 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             {
                 g.setColour (C::amber);
                 g.drawFittedText (line, hr.planLine, juce::Justification::centredRight, 1);
+            }
+        }
+    }
+
+    // ---- 8b: THE AUDITION ROW, under the hand-off row ------------------------
+    // The switch says what you are hearing and flips it; the line says the
+    // level gap for this window before any flip; the toggle appears only when
+    // the reference is louder and the host can cut it. Nothing here calls the
+    // host: mouseUp and the timer do.
+    {
+        const auto ar = echojay::matchAuditionRects (R.graph);
+        if (! ar.flip.isEmpty() && slots.ref != nullptr
+            && slots.ref->kind != CompareSlotState::Kind::Empty)
+        {
+            const bool refIsTop   = host->matchRefIsTop();
+            const bool refAudible = host->compareSlotAudible (refIsTop ? 0 : 1);
+            const auto fr = ar.flip.toFloat();
+            g.setColour (C::bg3.withAlpha (hotZone == 23 ? 1.0f : 0.7f));
+            g.fillRoundedRectangle (fr.reduced (1.0f), 4.0f);
+            g.setColour ((refAudible ? C::text2 : C::blue).withAlpha (0.6f));
+            g.drawRoundedRectangle (fr.reduced (1.5f), 4.0f, 1.0f);
+            g.setFont (juce::Font (juce::FontOptions (10.5f)));
+            g.setColour (C::text);
+            g.drawText (echojay::matchAuditionLabel (refAudible), ar.flip, juce::Justification::centred, true);
+
+            auto* port = matchLevelPortOf (*host);
+            const auto level = echojay::matchLevelLineOf (view, slots, port, getProperties());
+            if (level.offerToggle)
+            {
+                const auto tr = ar.toggle.toFloat();
+                g.setColour (C::blue.withAlpha (level.on ? 0.24f : (hotZone == 24 ? 0.12f : 0.0f)));
+                g.fillRoundedRectangle (tr.reduced (1.0f), 4.0f);
+                g.setColour (C::blue.withAlpha (level.on ? 0.7f : 0.4f));
+                g.drawRoundedRectangle (tr.reduced (1.5f), 4.0f, 1.0f);
+                g.setColour (level.on ? C::text : C::text2);
+                g.drawText (echojay::kMatchLevelToggleLabel, ar.toggle, juce::Justification::centred, true);
+            }
+            const auto text = level.on && level.matched.isNotEmpty() ? level.matched : level.gap;
+            if (text.isNotEmpty())
+            {
+                g.setColour (C::text3);
+                g.drawFittedText (text, ar.line, juce::Justification::centredRight, 1);
             }
         }
     }
@@ -2524,6 +2573,10 @@ static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
     // 22: "Make a plan" (5d). The rect is there whether or not the button is
     // drawn; mouseUp acts only when it is offered.
     if (echojay::matchHandOffRects (R.graph).planButton.contains (p)) return 22;
+    // 23 and 24: the audition switch and the level toggle (8b). mouseUp acts on
+    // the toggle only when it is offered.
+    if (echojay::matchAuditionRects (R.graph).flip.contains (p))   return 23;
+    if (echojay::matchAuditionRects (R.graph).toggle.contains (p)) return 24;
     if (R.button .contains (p)) return 1;
     if (R.mixPick.contains (p)) return 2;
     if (R.refPick.contains (p)) return 3;
@@ -2600,6 +2653,10 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                 // A report or a plan answer was about the other window.
                 getProperties().remove (echojay::matchPageReportInChatId());
                 getProperties().remove (echojay::matchPagePlanLineId());
+                // 8b: the level answer was for the other window; ask again now.
+                echojay::matchLevelSync (matchLevelPortOf (*host),
+                                         matchPageFor (*host, next, host->matchSlots()),
+                                         host->matchSlots(), getProperties());
                 repaint();
             }
             break;
@@ -2634,6 +2691,31 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
                 props.set (echojay::matchPagePlanBusyId(), false);
                 props.set (echojay::matchPagePlanLineId(), whyNot);
             }
+            repaint();
+            break;
+        }
+        // 8b: THE AUDITION SWITCH flips what you hear (setAudible, never on the
+        // side already audible: A's call would mute it).
+        case 23:
+        {
+            const auto slots = host->matchSlots();
+            if (slots.ref == nullptr || slots.ref->kind == CompareSlotState::Kind::Empty) break;
+            const bool refIsTop = host->matchRefIsTop();
+            const bool live = slots.mix != nullptr && slots.mix->kind == CompareSlotState::Kind::Live;
+            host->setAudible (echojay::matchAuditionFlipTarget (refIsTop, host->compareSlotAudible (refIsTop ? 0 : 1), live));
+            repaint();
+            break;
+        }
+        // 8b: THE LEVEL TOGGLE, only where it is offered; the host is asked at once.
+        case 24:
+        {
+            auto* port = matchLevelPortOf (*host);
+            const auto slots = host->matchSlots();
+            const auto view  = matchPageFor (*host, matchSelectedWindow (*host), slots);
+            if (! echojay::matchLevelMatchOffered (view.levelGapDb, port)) break;
+            auto& props = getProperties();
+            props.set (echojay::matchLevelOnId(), ! (bool) props.getWithDefault (echojay::matchLevelOnId(), false));
+            echojay::matchLevelSync (port, view, slots, props);
             repaint();
             break;
         }
@@ -2703,6 +2785,13 @@ void EchoJayEditor::MatchPanel::timerCallback()
         // THE ONE BUILD OF THE TICK. paint reads what this stores.
         tickSides      = host->buildMatchSides();
         tickSidesValid = true;
+        // 8b: a changed slot or reference asks the host for the level again.
+        if (auto* port = matchLevelPortOf (*host))
+        {
+            const auto slots = host->matchSlots();
+            echojay::matchLevelSync (port, matchPageFor (*host, matchSelectedWindow (*host), slots, &tickSides),
+                                     slots, getProperties());
+        }
         // The trail advances once per TICK, never once per repaint: a hover
         // must not run the history faster than time.
         ++tickSeq;

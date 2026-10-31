@@ -58,6 +58,11 @@
  #include "k8a_pins.h"
  #define EJ_K8A 1
 #endif
+// ROUND 8b's PINS: the audition switch and the level match.
+#if __has_include("k8b_pins.h")
+ #include "k8b_pins.h"
+ #define EJ_K8B 1
+#endif
 
 int main()
 {
@@ -108,6 +113,9 @@ int main()
 #endif
 #ifdef EJ_K8A
     k8apins::runK8aPins (check);
+#endif
+#ifdef EJ_K8B
+    k8bpins::runK8bPins (check);
 #endif
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;

@@ -73,34 +73,6 @@ inline juce::Identifier matchPageLastReportId()   { return "ejMatchLastReport"; 
 // FIGURES THE BLOCK NEEDS THAT THE SIDES DO NOT CARRY
 // -----------------------------------------------------------------------------
 
-/** A window's loudness, LUFS: 10*log10 of the mean of 10^(L/10) over the
-    window's usable hops (C4 section 7's usable hop). It is the measure the
-    loudest-30 window is chosen by, so a side's loudest30 figure is the
-    window's own (DESIGN rev 7 section 2: "the 30 s with the highest average
-    short-term loudness"). K's reading of C3's "loudest30". */
-template <typename Frame>
-inline std::optional<double> matchWindowLufs (const std::vector<Frame>& frames, HopRange w)
-{
-    double sum = 0.0;
-    int n = 0;
-    for (std::size_t i = w.begin; i < std::min (w.end, frames.size()); ++i)
-    {
-        if (! loudnessHopUsable (frames[i], i)) continue;
-        sum += std::pow (10.0, (double) frames[i].shortTermLufs / 10.0);
-        ++n;
-    }
-    if (n == 0 || ! (sum > 0.0)) return std::nullopt;
-    return 10.0 * std::log10 (sum / (double) n);
-}
-
-template <typename Frame>
-inline std::optional<double> matchLoudest30Lufs (const std::vector<Frame>& frames)
-{
-    const auto L = loudest30Window (frames);
-    if (! L.window) return std::nullopt;
-    return matchWindowLufs (frames, *L.window);
-}
-
 /** C3's reference.id. The page has the MEASURED reference (ReferenceResult),
     whose identity is its path; the library's RefEntry id is not reachable
     through MatchHost (REQUESTS_FOR_A_5 R5-2). So the id is "ref_" and 8 hex
