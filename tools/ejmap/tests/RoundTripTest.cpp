@@ -15238,6 +15238,29 @@ int main (int, char**)
         check (bad.isEmpty(), "map P1-6: pan read L negative / R positive; note values and word types a labelled switch; a bare k is x1000; a leading dot a decimal; plain dB and Off..Hz untouched"
                + (bad.isEmpty() ? juce::String() : " (failed " + bad.joinIntoString (",") + ")"));
     }
+    // P2-7 THE TUNER'S HELD-OUT CHECK (31 Oct, Phase 2 item 7): two settings between measured positions, aimed at a transition time read
+    // off the profile (1/3 and 2/3 of the measured range in log time, over the longest one-way stretch), judged within 20 %
+    {
+        using namespace ejmap::pitch;
+        const std::vector<SpeedPoint> autotune { { 0.0, 1099.0, 2.0 }, { 0.142857, 565.0, 1.0 }, { 0.285714, 300.0, 1.0 }, { 0.428571, 150.0, 1.0 }, { 0.571429, 80.0, 1.0 }, { 0.714286, 40.0, 1.0 } };
+        const auto t = speedTargets (autotune);
+        const double a1 = 1099.0 * std::pow (40.0 / 1099.0, 1.0 / 3.0), a2 = 1099.0 * std::pow (40.0 / 1099.0, 2.0 / 3.0);
+        const auto flat = speedTargets ({ { 0.0, 100.0, 1.0 }, { 0.5, 300.0, 1.0 }, { 1.0, 120.0, 1.0 } });
+        const auto prof = juce::JSON::parse (R"({"schema":"ej_tuner_profile/1","speed":{"control":"Retune Speed","acceptance":[{"aim_ms":364,"ran":true,"measured_ms":400,"off_pct":9.9,"pass":true},{"aim_ms":120,"ran":true,"measured_ms":160,"off_pct":33.3,"pass":false}]}})");
+        const auto dc = ejmap::wizcollect::displayCheck ({ prof });
+        const auto drv = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapCertDriver.h").loadFileAsString();
+        const auto tp = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/Source/EjmapTunerProfile.h").loadFileAsString();
+        juce::StringArray bad;
+        const double n1 = 0.142857 + (std::log (a1) - std::log (565.0)) / (std::log (300.0) - std::log (565.0)) * (0.285714 - 0.142857);   // log time between its bracket
+        if (! (t.size() == 2 && std::abs (t[0].norm - n1) < 1e-9 && std::abs (t[0].aimMs - a1) < 1e-6 && std::abs (t[1].aimMs - a2) < 1e-6 && t[0].norm > 0.142857 && t[0].norm < 0.285714 && t[1].norm > 0.428571 && t[1].norm < 0.571429)) bad.add ("targets");
+        if (! flat.empty()) bad.add ("flat");
+        if (! (speedWithin (100.0, 119.0) && ! speedWithin (100.0, 121.0) && ! speedWithin (0.0, 10.0))) bad.add ("bar");
+        const auto* cs = dc.getProperty ("controls", {}).getArray();
+        if (! (cs != nullptr && cs->size() == 1 && (*cs)[0].getProperty ("quantity", "").toString() == "speed" && (*cs)[0].getProperty ("verdict", "").toString() == "disagrees" && (int) (*cs)[0].getProperty ("checks", 0) == 2)) bad.add ("display");
+        if (! (drv.contains ("for (const auto& t : pitch::speedTargets (sp))") && drv.contains ("o->setProperty (\"speedAcceptance\", acc);") && drv.contains ("detentsBy == \"even8\" && ! runs.empty()")
+               && tp.contains ("sp->setProperty (\"acceptance\", speedCand->getProperty (\"speedAcceptance\", {}));"))) bad.add ("wired");
+        check (bad.isEmpty(), "tuner P2-7: the speed's held-out check - two aims between measured positions, judged within 20 %, in the profile and the display check" + (bad.isEmpty() ? juce::String() : " (failed " + bad.joinIntoString (",") + ")"));
+    }
     // WZ-34OCT-1 AN ONSET IS ITS WINDOW'S START (Kathy, 28 Oct: every measured delay time was +0.5 ms - 1/4 at 120 bpm read 500.5). A wet-only
     // tail whose echoes start at 500.0 and 1000.0 ms, in 1 ms windows whose tMs is the centre: the onset 500.0, the repeats 500.0 / 1000.0
     {

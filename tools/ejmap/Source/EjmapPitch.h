@@ -268,6 +268,41 @@ inline SpeedPick pickSpeed (const std::vector<SpeedRun>& runs, size_t positionIn
     }
     return pk;
 }
+// THE SPEED'S HELD-OUT CHECK (31 Oct, Phase 2 item 7): the tuners had no acceptance at all. Two settings BETWEEN measured positions,
+// aimed at a transition time read off the profile - at 1/3 and 2/3 of the measured range in log time, over the longest stretch whose
+// time moves one way; the norm interpolated in log time between the bracketing positions - each measured with the same square
+// vibrato at the half period that settled its bracket; within kSpeedAcceptPct of the aim. A continuous control only: a stepped one
+// has no setting between its detents
+inline constexpr double kSpeedAcceptPct = 20.0;
+struct SpeedPoint { double norm = 0.0, ms = 0.0, halfPeriodS = 1.0; };
+struct SpeedTarget { double norm = 0.0, aimMs = 0.0, halfPeriodS = 1.0; };
+inline std::vector<SpeedTarget> speedTargets (std::vector<SpeedPoint> pts)
+{
+    std::vector<SpeedTarget> out;
+    std::sort (pts.begin(), pts.end(), [] (const SpeedPoint& a, const SpeedPoint& b) { return a.norm < b.norm; });
+    pts.erase (std::remove_if (pts.begin(), pts.end(), [] (const SpeedPoint& p) { return ! (p.ms > 0.0); }), pts.end());
+    // the longest stretch, by norm, whose time keeps rising or keeps falling
+    size_t bestLo = 0, bestHi = 0;
+    for (size_t lo = 0; lo + 1 < pts.size(); ++lo)
+    {   size_t hi = lo + 1; const bool up = pts[hi].ms > pts[lo].ms;
+        while (hi + 1 < pts.size() && ((pts[hi + 1].ms > pts[hi].ms) == up) && pts[hi + 1].ms != pts[hi].ms) ++hi;
+        if (hi - lo > bestHi - bestLo) { bestLo = lo; bestHi = hi; } }
+    if (bestHi - bestLo < 2) return out;   // fewer than three points moving one way: nothing to aim between
+    const double a = std::log (pts[bestLo].ms), b = std::log (pts[bestHi].ms);
+    for (double f : { 1.0 / 3.0, 2.0 / 3.0 })
+    {
+        const double aim = std::exp (a + f * (b - a));
+        for (size_t i = bestLo; i < bestHi; ++i)
+        {
+            const double l0 = std::log (pts[i].ms), l1 = std::log (pts[i + 1].ms), la = std::log (aim);
+            if ((la - l0) * (la - l1) <= 0.0 && l0 != l1)
+            {   const double t = (la - l0) / (l1 - l0);
+                out.push_back ({ pts[i].norm + t * (pts[i + 1].norm - pts[i].norm), aim, juce::jmax (pts[i].halfPeriodS, pts[i + 1].halfPeriodS) }); break; }
+        }
+    }
+    return out;
+}
+inline bool speedWithin (double aimMs, double measuredMs) { return aimMs > 0.0 && measuredMs > 0.0 && std::abs (measuredMs - aimMs) <= kSpeedAcceptPct * 0.01 * aimMs; }
 // Which positions (by index) are still unsettled after the runs so far.
 inline std::vector<size_t> unsettledPositions (const std::vector<SpeedRun>& runs, size_t positions)
 {

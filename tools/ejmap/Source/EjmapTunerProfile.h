@@ -153,6 +153,7 @@ inline Export exportTunerProfileDraft (const juce::var& record)
         sp->setProperty ("curve", curveOf (*speedCand, true, true));
         sp->setProperty ("stepped", speedCand->getProperty ("detentsBy", "").toString() == "text" || speedCand->getProperty ("detentsBy", "").toString() == "declared");
         if (speedCand->hasProperty ("detentTexts")) sp->setProperty ("detents", speedCand->getProperty ("detentTexts", {}));
+        if (speedCand->hasProperty ("speedAcceptance")) sp->setProperty ("acceptance", speedCand->getProperty ("speedAcceptance", {}));   // 31 Oct: the held-out check
         prof->setProperty ("speed", juce::var (sp));
     }
     else { prof->setProperty ("speed", juce::var()); e.notes.add ("speed null: no candidate's transition time moves across its positions"); }

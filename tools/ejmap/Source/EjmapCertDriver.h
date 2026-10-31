@@ -8324,6 +8324,31 @@ inline int runCertTuner (const SweepOptions& opt)
             if (! mv.ok) break;
         }
         auto rec = pitch::composePitchSweep (ms, runs, keyIndex, keyText);
+        // 31 Oct (Phase 2 item 7): THE SPEED'S HELD-OUT CHECK - two settings between measured positions, aimed at a transition time
+        // read off this sweep, measured with the same square vibrato (a continuous control only)
+        if (! windowSeen && detentsBy == "even8" && ! runs.empty())
+        {
+            std::vector<pitch::SpeedPoint> sp;
+            for (int i = 0; i < norms.size(); ++i) { const auto pk = pitch::pickSpeed (runs, (size_t) i); if (pk.fromRun && pk.result.result == "measured") sp.push_back ({ norms[i].getDoubleValue(), pk.result.durationMs, pk.halfPeriodS }); }
+            juce::Array<juce::var> acc;
+            for (const auto& t : pitch::speedTargets (sp))
+            {
+                if (windowSeen) break;
+                const double rate = 0.5 / t.halfPeriodS, hold = 6.0 * t.halfPeriodS;
+                auto va = runProbe ("c" + ctl + ".speedacc" + juce::String (t.aimMs, 0), { "--sweep-pitch", "ctl=" + ctl, "norms=" + juce::String (t.norm, 6), "gen=vibrato", "shape=square", "rate=" + juce::String (rate, 4), "note=220", "cents=30", "hold=" + juce::String (hold, 0), "db=-18" });
+                if (va.kind == ChildResult::Kind::uiShown) { windowSeen = true; break; }
+                const auto mv = pitch::parsePitch (va.cleanExit() ? va.out : juce::String ("refused " + va.describe()));
+                auto* a = new juce::DynamicObject(); a->setProperty ("aim_ms", std::round (t.aimMs * 10.0) / 10.0); a->setProperty ("norm", t.norm); a->setProperty ("half_period_s", t.halfPeriodS);
+                const auto r = mv.ok && ! mv.positions.empty() ? pitch::deriveSpeed (mv.positions[0], mv.cents, mv.rateHz) : pitch::SpeedResult();
+                const bool ran = r.result == "measured"; a->setProperty ("ran", ran);
+                if (ran) { const double off = 100.0 * (r.durationMs - t.aimMs) / t.aimMs; a->setProperty ("measured_ms", std::round (r.durationMs * 10.0) / 10.0); a->setProperty ("off_pct", std::round (off * 10.0) / 10.0);
+                           a->setProperty ("pass", pitch::speedWithin (t.aimMs, r.durationMs)); a->setProperty ("why", juce::String (off, 1) + " % off"); if (! mv.positions.empty()) a->setProperty ("display", mv.positions[0].text); }
+                else { a->setProperty ("pass", false); a->setProperty ("why", mv.ok ? r.reason : mv.refused); }
+                acc.add (juce::var (a));
+                say ("  [" + ctl + "] " + c->name + ": speed acceptance, aim " + juce::String (t.aimMs, 0) + " ms at norm " + juce::String (t.norm, 3) + ": " + (ran ? juce::String (r.durationMs, 0) + " ms" : juce::String ("no reading")));
+            }
+            if (auto* o = rec.getDynamicObject()) o->setProperty ("speedAcceptance", acc);
+        }
         // the held note WITH a 30-cent 5 Hz sine vibrato on the strength control too (Kathy, 6 Oct item 5, data only): a tuner with no
         // Humanize word (bx_crispytuner) still shows here how much of a held note's vibrato each strength position keeps
         juce::Array<juce::var> heldVib;

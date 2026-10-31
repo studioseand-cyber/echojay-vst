@@ -134,6 +134,16 @@ inline void checksFrom (const juce::var& doc, std::vector<Check>& out, const juc
             if (const auto m = missFromWhy (a.getProperty ("why", "").toString())) { k.miss = m->first; k.unit = m->second; }
             out.push_back (k);
         }
+    // 31 Oct (Phase 2 item 7): a tuner's speed acceptance - the transition time aimed at against the time measured
+    if (const auto sp = doc.getProperty ("speed", {}); sp.isObject())
+        if (const auto* acc = sp.getProperty ("acceptance", {}).getArray())
+            for (const auto& a : *acc)
+            {
+                const auto ctl = controlOf (sp);
+                if (! (bool) a.getProperty ("ran", false)) { notRun (ctl, "speed", a); continue; }
+                Check k; k.control = ctl; k.quantity = "speed"; k.unit = "%"; k.tolerance = 20.0; k.ran = true; k.at = juce::String ((double) a.getProperty ("aim_ms", 0.0), 0) + " ms";
+                k.miss = num (a.getProperty ("off_pct", {})); k.within = (bool) a.getProperty ("pass", false); out.push_back (k);
+            }
     // a compressor's tone check (its own file, or a profile's block): the GR asked of the amount control against the GR measured
     const auto tc = doc.getProperty ("tone_check", {}).isObject() ? doc.getProperty ("tone_check", {})
                   : (doc.hasProperty ("pass_within_0_5_db") && doc.hasProperty ("g_db") ? doc : juce::var());
