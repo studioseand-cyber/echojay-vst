@@ -45,6 +45,10 @@ REQUIRED=(
   "5712b15c|signed in again mid-run: back to the same run, never the consent once given"
   "3ebbc73b|a plugin that applies a write while processing is read, not declined (Solid Bus Comp)"
   "dbdbb724|signed in again: the stale sign-in prompt never asks a second time"
+  "c3646e00|a core role proven by measurement: the control the category's pass chose fills it"
+  "6a188328|a limiter with no ceiling goes as its compressor profile (OneKnob Louder), never half-sent"
+  "940b14c5|STAGING 7: the display check, the program file's stamp, the readings in each result's payload"
+  "ec0b4caf|Phase 1: the right feature read, the ceiling never above the request, the decay a time, pan held"
 )
 
 die() { echo "STOP: $*" >&2; exit 1; }
@@ -100,7 +104,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
     t refused client_ok "has space"
     t refused client_ok "sk_live_abcdefghijkl"
     t refused client_ok "eyJhbGciOiJIUzI1NiJ9"
-    t ok      has_fixes "dbdbb724"
+    t ok      has_fixes "ec0b4caf"   # the newest required fix: every other one is its ancestor
+    t refused has_fixes "dbdbb724"   # before the STAGING 7 and Phase 1 fixes
     t refused has_fixes "3ebbc73b"
     t refused has_fixes "5712b15c"
     t refused has_fixes "f599b40b"
